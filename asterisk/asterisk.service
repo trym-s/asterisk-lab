@@ -1,0 +1,20 @@
+[Unit]
+Description=Asterisk PBX
+Documentation=man:asterisk(8)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=asterisk
+Group=asterisk
+RuntimeDirectory=asterisk
+ExecStart=/usr/sbin/asterisk -f -C /etc/asterisk/asterisk.conf
+ExecReload=/usr/sbin/asterisk -rx "core reload"
+Restart=on-failure
+RestartSec=2
+LimitNOFILE=8192
+LimitNPROC=8192
+
+[Install]
+WantedBy=multi-user.target
