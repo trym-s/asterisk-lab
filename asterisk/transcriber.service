@@ -11,9 +11,35 @@ WorkingDirectory=/opt/transcriber
 ExecStart=/opt/transcriber/venv/bin/python /opt/transcriber/watcher.py
 Restart=on-failure
 RestartSec=5
+Nice=10
+
 Environment=HOME=/var/lib/asterisk
 Environment=XDG_CACHE_HOME=/var/lib/asterisk/.cache
-Nice=10
+
+# Filesystem isolation: read-only /usr, /etc, /boot; /home invisible; private /tmp.
+# The watcher only needs to write to the monitor dir and its model cache.
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/spool/asterisk/monitor /var/lib/asterisk/.cache
+
+# Kernel + control-plane isolation.
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+
+# Process and capability restrictions.
+NoNewPrivileges=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+
+# Torch / numba JIT writes executable pages, so MemoryDenyWriteExecute stays off.
 
 [Install]
 WantedBy=multi-user.target

@@ -47,7 +47,7 @@ echo "==> venv at $VENV (openai-whisper)"
 $SUDO install -d -m 1777 /var/tmp/pip-build /var/tmp/pip-cache
 PIP_ENV=(env TMPDIR=/var/tmp PIP_CACHE_DIR=/var/tmp/pip-cache)
 $SUDO "${PIP_ENV[@]}" "$VENV/bin/pip" install --upgrade pip
-$SUDO "${PIP_ENV[@]}" "$VENV/bin/pip" install openai-whisper
+$SUDO "${PIP_ENV[@]}" "$VENV/bin/pip" install -r "$REPO_ROOT/scripts/requirements.txt"
 
 echo "==> pre-download whisper model '$MODEL' into asterisk's cache"
 $SUDO install -d -o asterisk -g asterisk -m 0755 /var/lib/asterisk/.cache

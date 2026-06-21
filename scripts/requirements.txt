@@ -1,0 +1,4 @@
+# Transcriber runtime dependencies. Pinned for reproducible installs.
+# Re-run `scripts/setup-transcriber.sh` after bumping a version.
+openai-whisper==20250625
+torch==2.12.1

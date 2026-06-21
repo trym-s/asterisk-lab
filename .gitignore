@@ -7,3 +7,6 @@ __pycache__/
 recordings/
 transcripts/
 
+# Personal living notes for the author — not for the repo's audience.
+NOTES.md
+
