@@ -8,6 +8,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
 # ---- env ------------------------------------------------------------
+# shellcheck source=/dev/null
 [ -f .env ] && { set -a; . .env; set +a; }
 : "${SIP_EXT_1001_PASSWORD:?SIP_EXT_1001_PASSWORD not set; cp .env.example .env and fill it in}"
 : "${ASTERISK_VERSION:=22.9.0}"
@@ -15,6 +16,7 @@ cd "$REPO_ROOT"
 SUDO=$([ "$(id -u)" -eq 0 ] && echo "" || echo "sudo")
 $SUDO -v 2>/dev/null || true
 
+# shellcheck source=/dev/null
 . /etc/os-release
 case "${ID:-}" in debian|ubuntu) ;; *) echo "unsupported distro: ${ID:-?}" >&2; exit 1;; esac
 echo "==> distro: $PRETTY_NAME"
