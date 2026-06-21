@@ -10,7 +10,7 @@ clearglobalvars=no
 MONITOR_DIR=/var/spool/asterisk/monitor
 
 [from-softphones]
-; sip user 1001 dials 600. Asterisk answers, records the call as WAV,
+; sip user dials 600. Asterisk answers, records the call as WAV,
 ; plays a short prompt, then enters Echo() so microphone audio is present.
 exten => 600,1,NoOp(Baresip lab call from ${CALLERID(all)} to ${EXTEN})
  same => n,Set(RECORDING_FILE=${MONITOR_DIR}/${STRFTIME(${EPOCH},,%Y%m%d-%H%M%S)}-${CALLERID(num)}-${EXTEN}-${UNIQUEID}.wav)
@@ -18,6 +18,16 @@ exten => 600,1,NoOp(Baresip lab call from ${CALLERID(all)} to ${EXTEN})
  same => n,MixMonitor(${RECORDING_FILE})
  same => n,NoOp(Recording to ${RECORDING_FILE})
  same => n,Playback(demo-congrats)
+ same => n,Echo()
+ same => n,Hangup()
+
+; Direct dial between softphones (e.g. 1001 dials 1002). Pattern _10XX matches
+; any 4-digit extension in 1000-1099 — keeps the dialplan in lockstep with
+; SIP_EXTENSIONS without templating extensions.conf per endpoint.
+exten => _10XX,1,NoOp(Inbound call: ${CALLERID(all)} -> ${EXTEN})
+ same => n,Set(RECORDING_FILE=${MONITOR_DIR}/${STRFTIME(${EPOCH},,%Y%m%d-%H%M%S)}-${CALLERID(num)}-${EXTEN}-${UNIQUEID}.wav)
+ same => n,Answer()
+ same => n,MixMonitor(${RECORDING_FILE})
  same => n,Echo()
  same => n,Hangup()
 

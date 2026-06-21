@@ -10,8 +10,12 @@ cd "$REPO_ROOT"
 # ---- env ------------------------------------------------------------
 # shellcheck source=/dev/null
 [ -f .env ] && { set -a; . .env; set +a; }
-: "${SIP_EXT_1001_PASSWORD:?SIP_EXT_1001_PASSWORD not set; cp .env.example .env and fill it in}"
+: "${SIP_EXTENSIONS:?SIP_EXTENSIONS not set; cp .env.example .env and fill it in}"
 : "${ASTERISK_VERSION:=22.9.0}"
+for ext in $SIP_EXTENSIONS; do
+  pw_var="SIP_EXT_${ext}_PASSWORD"
+  : "${!pw_var:?$pw_var not set; add it to .env}"
+done
 
 SUDO=$([ "$(id -u)" -eq 0 ] && echo "" || echo "sudo")
 $SUDO -v 2>/dev/null || true
@@ -58,13 +62,35 @@ $SUDO systemctl enable asterisk
 
 # ---- 5. render configs from templates -------------------------------
 echo "==> asterisk configs"
-export SIP_EXT_1001_PASSWORD
-$SUDO sh -c "envsubst < '$REPO_ROOT/asterisk/pjsip.conf.tmpl' > /etc/asterisk/pjsip.conf"
-$SUDO install -m 0644 asterisk/extensions.conf.tmpl /etc/asterisk/extensions.conf
-$SUDO install -m 0644 asterisk/rtp.conf /etc/asterisk/rtp.conf
+$SUDO install -o asterisk -g asterisk -m 0644 asterisk/pjsip.conf.tmpl /etc/asterisk/pjsip.conf
+$SUDO install -o asterisk -g asterisk -m 0644 asterisk/extensions.conf.tmpl /etc/asterisk/extensions.conf
+$SUDO install -o asterisk -g asterisk -m 0644 asterisk/rtp.conf /etc/asterisk/rtp.conf
 $SUDO install -d -o asterisk -g asterisk -m 0755 /var/spool/asterisk/monitor
-$SUDO chown asterisk:asterisk /etc/asterisk/pjsip.conf /etc/asterisk/extensions.conf /etc/asterisk/rtp.conf
-$SUDO chmod 0640 /etc/asterisk/pjsip.conf   # contains password
+
+# Per-endpoint pjsip.d/<ext>.conf — rendered from pjsip-endpoint.conf.tmpl.
+# envsubst whitelist prevents the template's other $-variables (none today,
+# but future-proof) from being silently substituted to empty.
+$SUDO install -d -o asterisk -g asterisk -m 0750 /etc/asterisk/pjsip.d
+for ext in $SIP_EXTENSIONS; do
+  pw_var="SIP_EXT_${ext}_PASSWORD"
+  out=/etc/asterisk/pjsip.d/${ext}.conf
+  SIP_EXT="$ext" SIP_EXT_PASSWORD="${!pw_var}" \
+    envsubst '${SIP_EXT} ${SIP_EXT_PASSWORD}' \
+    < asterisk/pjsip-endpoint.conf.tmpl \
+    | $SUDO tee "${out}.new" >/dev/null
+  $SUDO chown asterisk:asterisk "${out}.new"
+  $SUDO chmod 0640 "${out}.new"
+  $SUDO mv "${out}.new" "$out"
+done
+
+# Drop orphaned endpoint files (in /etc but not in SIP_EXTENSIONS) so
+# removing a number from .env actually removes the endpoint on re-run.
+shopt -s nullglob
+for f in /etc/asterisk/pjsip.d/*.conf; do
+  ext=$(basename "$f" .conf)
+  [[ " $SIP_EXTENSIONS " == *" $ext "* ]] || { echo "  pruning orphan endpoint $ext"; $SUDO rm "$f"; }
+done
+shopt -u nullglob
 
 # ---- 6. start, verify -----------------------------------------------
 echo "==> (re)starting asterisk"

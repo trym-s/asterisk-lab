@@ -1,28 +1,11 @@
 ; Rendered by install.sh from asterisk/pjsip.conf.tmpl.
 ; Edit the template in the repo, not /etc/asterisk/pjsip.conf directly.
+; Per-endpoint blocks live in /etc/asterisk/pjsip.d/<ext>.conf — see
+; asterisk/pjsip-endpoint.conf.tmpl.
 
 [transport-udp]
 type=transport
 protocol=udp
 bind=0.0.0.0:5060
 
-[1001]
-type=endpoint
-context=from-softphones
-disallow=all
-allow=ulaw,alaw
-auth=1001
-aors=1001
-direct_media=no
-
-[1001]
-type=aor
-max_contacts=1
-remove_existing=yes
-qualify_frequency=60
-
-[1001]
-type=auth
-auth_type=userpass
-username=1001
-password=${SIP_EXT_1001_PASSWORD}
+#include "pjsip.d/*.conf"

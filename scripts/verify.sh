@@ -37,7 +37,19 @@ check() {
 echo "== asterisk =="
 check "asterisk.service active"       "active"            "$SUDO systemctl is-active asterisk"
 check "asterisk version 22.x"          "Asterisk 22"        "$SUDO asterisk -rx 'core show version'"
-check "pjsip endpoint 1001 present"   "1001"               "$SUDO asterisk -rx 'pjsip show endpoints' | grep -E '^ Endpoint: +1001'"
+
+# Discover provisioned endpoints from /etc/asterisk/pjsip.d/ (post-install state).
+# Empty list means install.sh has never rendered endpoints — caller should re-run it.
+endpoints=$($SUDO bash -c "shopt -s nullglob; for f in /etc/asterisk/pjsip.d/*.conf; do basename \$f .conf; done" 2>/dev/null)
+if [ -z "$endpoints" ]; then
+  printf '  %-42s FAIL\n' "pjsip.d/ has at least one endpoint"
+  fail=$((fail + 1))
+else
+  for ext in $endpoints; do
+    check "pjsip endpoint $ext present"    "$ext"   "$SUDO asterisk -rx 'pjsip show endpoints' | grep -E '^ Endpoint: +$ext'"
+  done
+fi
+
 check "dialplan extension 600 present" "MixMonitor"         "$SUDO asterisk -rx 'dialplan show 600@from-softphones'"
 check "monitor dir writable by asterisk" "asterisk asterisk" "stat -c '%U %G' /var/spool/asterisk/monitor"
 
