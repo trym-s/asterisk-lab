@@ -1,0 +1,19 @@
+[Unit]
+Description=Transcribe Asterisk recordings with a local Whisper model
+After=asterisk.service
+Wants=asterisk.service
+
+[Service]
+Type=simple
+User=asterisk
+Group=asterisk
+WorkingDirectory=/opt/transcriber
+ExecStart=/opt/transcriber/venv/bin/python /opt/transcriber/watcher.py
+Restart=on-failure
+RestartSec=5
+Environment=HOME=/var/lib/asterisk
+Environment=XDG_CACHE_HOME=/var/lib/asterisk/.cache
+Nice=10
+
+[Install]
+WantedBy=multi-user.target
