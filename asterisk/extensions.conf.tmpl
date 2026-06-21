@@ -1,0 +1,24 @@
+; Rendered by install.sh from asterisk/extensions.conf.tmpl.
+; Edit the template in the repo, not /etc/asterisk/extensions.conf directly.
+
+[general]
+static=yes
+writeprotect=no
+clearglobalvars=no
+
+[globals]
+MONITOR_DIR=/var/spool/asterisk/monitor
+
+[from-softphones]
+; sip user 1001 dials 600. Asterisk answers, records the call as WAV,
+; plays a short prompt, then enters Echo() so microphone audio is present.
+exten => 600,1,NoOp(Baresip lab call from ${CALLERID(all)} to ${EXTEN})
+ same => n,Set(RECORDING_FILE=${MONITOR_DIR}/${STRFTIME(${EPOCH},,%Y%m%d-%H%M%S)}-${CALLERID(num)}-${EXTEN}-${UNIQUEID}.wav)
+ same => n,Answer()
+ same => n,MixMonitor(${RECORDING_FILE})
+ same => n,NoOp(Recording to ${RECORDING_FILE})
+ same => n,Playback(demo-congrats)
+ same => n,Echo()
+ same => n,Hangup()
+
+exten => h,1,NoOp(Call ended. Recording file was ${RECORDING_FILE})

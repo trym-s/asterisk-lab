@@ -23,7 +23,8 @@ echo "==> distro: $PRETTY_NAME"
 echo "==> apt prerequisites"
 $SUDO apt-get update -qq
 DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y --no-install-recommends \
-  build-essential autoconf libtool pkg-config git wget ca-certificates gettext-base
+  build-essential autoconf libtool pkg-config git wget ca-certificates gettext-base \
+  sngrep python3 python3-venv
 
 # ---- 2. build asterisk if not already at the target version ---------
 SRC=/usr/local/src/asterisk
@@ -57,8 +58,10 @@ $SUDO systemctl enable asterisk
 echo "==> asterisk configs"
 export SIP_EXT_1001_PASSWORD
 $SUDO sh -c "envsubst < '$REPO_ROOT/asterisk/pjsip.conf.tmpl' > /etc/asterisk/pjsip.conf"
+$SUDO install -m 0644 asterisk/extensions.conf.tmpl /etc/asterisk/extensions.conf
 $SUDO install -m 0644 asterisk/rtp.conf /etc/asterisk/rtp.conf
-$SUDO chown asterisk:asterisk /etc/asterisk/pjsip.conf /etc/asterisk/rtp.conf
+$SUDO install -d -o asterisk -g asterisk -m 0755 /var/spool/asterisk/monitor
+$SUDO chown asterisk:asterisk /etc/asterisk/pjsip.conf /etc/asterisk/extensions.conf /etc/asterisk/rtp.conf
 $SUDO chmod 0640 /etc/asterisk/pjsip.conf   # contains password
 
 # ---- 6. start, verify -----------------------------------------------
@@ -72,3 +75,9 @@ echo
 echo "done. asterisk $ASTERISK_VERSION running. verify:"
 echo "  systemctl status asterisk"
 echo "  sudo asterisk -rx 'pjsip show endpoints'"
+echo "  sudo asterisk -rx 'dialplan show from-softphones'"
+echo "  sudo sngrep -d any port 5060"
+echo
+echo "transcription (optional, runs locally on this box):"
+echo "  sudo ./scripts/setup-transcriber.sh     # venv + transcriber systemd unit"
+echo "  systemctl status transcriber"
