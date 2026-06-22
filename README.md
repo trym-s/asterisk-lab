@@ -34,14 +34,62 @@ The host bootstrap script does **not** install packages. Install these on the ho
 | Tool / capability | Arch                  | Debian / Ubuntu                                | Fedora / RHEL                    |
 |-------------------|-----------------------|------------------------------------------------|----------------------------------|
 | `virsh`           | `libvirt`             | `libvirt-clients` + `libvirt-daemon-system`    | `libvirt-client` + `libvirt-daemon` |
-| QEMU/KVM          | `qemu-base`           | `qemu-system-x86`                              | `qemu-kvm`                       |
+| QEMU/KVM + `qemu-img` | `qemu-base`       | `qemu-system-x86` + `qemu-utils`               | `qemu-kvm` + `qemu-img`          |
 | `dnsmasq`         | `dnsmasq`             | `dnsmasq-base` (pulled in by libvirt)          | bundled with `libvirt-daemon`    |
 | NAT helpers       | `iptables-nft`        | (default)                                      | (default)                        |
 | `virt-install`    | `virt-install`        | `virtinst`                                     | `virt-install`                   |
+| `cloud-localds`   | `cloud-image-utils`   | `cloud-image-utils`                            | `cloud-utils` / `cloud-utils-growpart` |
+| `curl`            | `curl`                | `curl`                                         | `curl`                           |
 
 In addition, the host kernel must have the `sch_htb` traffic-control module available (`/lib/modules/$(uname -r)/kernel/net/sched/sch_htb.ko*`). Standard kernels ship it; the bootstrap script loads it.
 
-### Steps
+### Option A: reproducible SSH-ready VM with cloud-init
+
+This is the fastest non-interactive path. It downloads the official Debian 13 genericcloud image, expands it to a fresh independent qcow2 disk, creates a NoCloud seed ISO with your SSH public key, defines `asterisk-deb13-cloudinit`, starts it, and prints the DHCP lease when available.
+
+```bash
+# 1. Install the host dependencies above with your package manager.
+
+# 2. Run the libvirt bootstrap. Loads sch_htb, enables libvirtd, starts
+#    the default NAT network, creates the default storage pool.
+./infra/libvirt/setup-host.sh
+
+# 3. Create and start the VM. Defaults:
+#    DOMAIN=asterisk-deb13-cloudinit
+#    SSH_PUBKEY_FILE=$HOME/.ssh/id_ed25519.pub
+#    DISK_SIZE=30G
+#    MEMORY_GIB=4
+#    VCPUS=4
+./infra/libvirt/create-cloudinit-vm.sh
+
+# 4. Find the VM IP if it was not printed yet.
+virsh -c qemu:///system domifaddr asterisk-deb13-cloudinit --source lease
+
+# 5. SSH in and follow the Quick start above.
+ssh deb@<vm-ip>
+```
+
+Useful overrides:
+
+```bash
+DOMAIN=asterisk-deb13-test \
+SSH_PUBKEY_FILE=~/.ssh/id_ed25519.pub \
+DISK_SIZE=30G \
+MEMORY_GIB=4 \
+VCPUS=4 \
+./infra/libvirt/create-cloudinit-vm.sh
+```
+
+The generated VM uses independent libvirt volumes:
+
+```text
+/var/lib/libvirt/images/<DOMAIN>.qcow2
+/var/lib/libvirt/images/<DOMAIN>-seed.iso
+```
+
+The seed ISO contains only host/user bootstrap data: hostname, username, sudo rule, and your SSH public key. It does not contain SIP passwords; those still belong in the target VM's `.env`.
+
+### Option B: manual qcow2 VM
 
 ```bash
 # 1. Install the host dependencies above with your package manager.
@@ -87,6 +135,8 @@ scripts/
   verify.sh                    smoke checks (asterisk, dialplan, transcriber)
 infra/libvirt/           optional libvirt convenience
   asterisk-deb13.xml           domain XML using default pool + default network
+  asterisk-deb13-cloudinit.xml reference XML for the default cloud-init VM
+  create-cloudinit-vm.sh       downloads Debian cloud image + seed ISO + starts VM
   setup-host.sh                host-side libvirt bootstrap
 .github/workflows/
   lint.yml                     shellcheck + ruff on push/PR
@@ -217,6 +267,8 @@ sudo -u asterisk /opt/transcriber/venv/bin/python /opt/transcriber/transcribe.py
 A few decisions in this repo are deliberate and worth flagging for a future maintainer:
 
 **Pinned transcriber dependencies (`scripts/requirements.txt`).** `openai-whisper==20250625` and `torch==2.12.1` are pinned, not floated. Whisper bumps occasionally break torch ABI; an unpinned install means the box you provision tomorrow runs different code than the one that worked yesterday. Pin is top-level only; transitives still float. For full reproducibility upgrade to `pip-tools` or `uv lock` and freeze a `requirements.lock` from a clean venv.
+
+On Debian 13 with Python 3.13, the pinned `torch==2.12.1` wheel currently pulls CUDA-related wheels even on a CPU-only VM. A fresh cloud-init VM test completed successfully, but the transcriber footprint was material: `/opt/transcriber` was about 4.9 GB and `/var/tmp/pip-cache` about 2.7 GB after install. Use a 30 GB VM disk or larger unless you switch to a CPU-only torch wheel strategy.
 
 **systemd hardening on `transcriber.service`.** Beyond `User=asterisk`, the unit sets `ProtectSystem=strict`, `ProtectHome=true`, `PrivateTmp=true`, explicit `ReadWritePaths`, the `ProtectKernel*` group, `NoNewPrivileges`, `RestrictNamespaces`, and friends. `MemoryDenyWriteExecute=true` is **intentionally not set** — PyTorch / numba JIT writes executable pages at runtime and crashes with SIGSYS if it's enabled. `systemd-analyze security transcriber` rates the unit ~5.8 MEDIUM; further hardening (`SystemCallFilter=@system-service`, `CapabilityBoundingSet=`, `ProtectProc=invisible`) is feasible but needs runtime testing to avoid breaking numpy/torch.
 
