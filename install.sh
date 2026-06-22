@@ -12,6 +12,7 @@ cd "$REPO_ROOT"
 [ -f .env ] && { set -a; . .env; set +a; }
 : "${SIP_EXTENSIONS:?SIP_EXTENSIONS not set; cp .env.example .env and fill it in}"
 : "${ASTERISK_VERSION:=22.9.0}"
+: "${MAKE_JOBS:=$(nproc)}"
 for ext in $SIP_EXTENSIONS; do
   pw_var="SIP_EXT_${ext}_PASSWORD"
   : "${!pw_var:?$pw_var not set; add it to .env}"
@@ -42,7 +43,7 @@ else
   $SUDO git -C "$SRC" fetch --all --tags
   $SUDO git -C "$SRC" checkout "$ASTERISK_VERSION"
   $SUDO "$SRC/contrib/scripts/install_prereq" install
-  ( cd "$SRC" && $SUDO ./configure && $SUDO make -j"$(nproc)" && $SUDO make install && $SUDO make samples )
+  ( cd "$SRC" && $SUDO ./configure && $SUDO make -j"$MAKE_JOBS" && $SUDO make install && $SUDO make samples )
 fi
 
 # ---- 3. system user + directory ownership ---------------------------

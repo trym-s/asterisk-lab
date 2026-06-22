@@ -220,6 +220,13 @@ A few decisions in this repo are deliberate and worth flagging for a future main
 
 **systemd hardening on `transcriber.service`.** Beyond `User=asterisk`, the unit sets `ProtectSystem=strict`, `ProtectHome=true`, `PrivateTmp=true`, explicit `ReadWritePaths`, the `ProtectKernel*` group, `NoNewPrivileges`, `RestrictNamespaces`, and friends. `MemoryDenyWriteExecute=true` is **intentionally not set** — PyTorch / numba JIT writes executable pages at runtime and crashes with SIGSYS if it's enabled. `systemd-analyze security transcriber` rates the unit ~5.8 MEDIUM; further hardening (`SystemCallFilter=@system-service`, `CapabilityBoundingSet=`, `ProtectProc=invisible`) is feasible but needs runtime testing to avoid breaking numpy/torch.
 
+**Small VM builds.** Asterisk's source build defaults to `MAKE_JOBS=$(nproc)`. On small VMs this can OOM-kill the compiler. Use at least 4 GB RAM, or run a constrained build:
+
+```bash
+sudo MAKE_JOBS=2 ./install.sh
+sudo ./scripts/setup-transcriber.sh
+```
+
 **`verify.sh` and `pipefail`.** Avoid piping `pip show ...` into `head -1` under `set -o pipefail` — `head` closes the pipe early, `pip` gets `SIGPIPE` and exits 141, and the check reports `FAIL` even though pip succeeded. Same trap with any short-circuiting downstream (`head`, `grep -q`, `awk 'NR==1'`). The current `verify.sh` avoids the pattern; preserve that on extension.
 
 **`make deploy` excludes `.env` on purpose.** Secrets stay placed manually on the target (`scp .env vm:~/asterisk-lab/.env`, or production-grade `systemd-creds`/vault). A pipeline that rsyncs a real `.env` into a VM is a leak surface — any audit would flag it.

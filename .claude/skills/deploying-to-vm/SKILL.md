@@ -40,7 +40,7 @@ The deploy model: code follows the rsync; secrets stay on the target. `make depl
 
 ```bash
 make deploy VM=deb@192.168.122.20    # rsync + install.sh + setup-transcriber.sh
-make verify VM=deb@192.168.122.20    # smoke checks; passes when both services live
+ssh deb@192.168.122.20 'cd ~/asterisk-lab && sudo ./scripts/verify.sh'
 make logs   VM=deb@192.168.122.20    # tail asterisk + transcriber journals
 ```
 
@@ -62,5 +62,5 @@ ssh $VM 'cd ~/asterisk-lab && sudo ./scripts/verify.sh'
 
 - **`.env` missing on the VM** → `install.sh` exits with `SIP_EXTENSIONS not set`. The rsync excludes it; you must create it manually (step 2 above) before the first deploy or the install fails fast.
 - **Local `rsync` not installed** → `make deploy` errors out. Either install `rsync` locally or substitute `tar czf - --exclude=.git --exclude=.env . | ssh VM 'tar xzf - -C ~/asterisk-lab/'`.
-- **First-run build can hit OOM on small VMs** — Asterisk's `make -j$(nproc)` plus a 2 GB VM can OOM-kill `cc1`. Either give the VM ≥4 GB or set `MAKEFLAGS=-j2` before running install.
+- **First-run build can hit OOM on small VMs** — Asterisk's source build defaults to `MAKE_JOBS=$(nproc)`, and a 2 GB VM can OOM-kill `cc1`. Either give the VM at least 4 GB or run `sudo MAKE_JOBS=2 ./install.sh`.
 - **Re-running after a config edit is the right path** — the script is idempotent. Don't hand-edit `/etc/asterisk/*.conf` on the VM expecting it to stick.
