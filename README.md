@@ -216,12 +216,15 @@ From the host:
 
 ```bash
 make deploy-sbc SBC_VM=deb@<sbc-ip>
-make verify-sbc SBC_VM=deb@<sbc-ip>   # ssh form; or run sbc/verify.sh on the VM directly
+ssh deb@<sbc-ip> 'cd ~/asterisk-lab && sudo ./sbc/verify.sh'
 ```
 
-`deploy-sbc` rsyncs the repo and runs `sbc/install.sh` on the VM —
+`deploy-sbc` rsyncs the repo and runs `sbc/install.sh` on the SBC VM —
 idempotent: re-run any time after editing `sbc/opensips.cfg.tmpl` or
-`sbc/rtpengine.conf.tmpl`. `verify-sbc` prints one line per check:
+`sbc/rtpengine.conf.tmpl`. `make verify-sbc` is the same `sbc/verify.sh`
+but executed locally on the SBC VM (mirrors `make verify` on the
+Asterisk side); use it after SSHing in, or invoke the script directly
+over SSH as shown above. `verify.sh` prints one line per check:
 
 ```text
 == opensips ==
@@ -292,8 +295,10 @@ while audio is working, RTP is bypassing the SBC — typical cause is
 
 ```bash
 make verify                                     # asterisk lab: 10+ checks; exits non-zero on first failure
-make verify-sbc SBC_VM=deb@<sbc-ip>             # (optional) SBC lab: 11 checks
+ssh deb@<sbc-ip> 'cd ~/asterisk-lab && sudo ./sbc/verify.sh'   # (optional) SBC lab: 11 checks
 ```
+
+`make verify` and `make verify-sbc` both run the smoke-check script locally on whichever host invokes them — they mirror the asymmetry that `make install` already has. To verify a remote VM, SSH in and run `make verify[-sbc]` from there, or call the script over SSH as shown.
 
 `verify.sh` covers `asterisk.service` active, version, each PJSIP endpoint listed in `/etc/asterisk/pjsip.d/` present (discovered at runtime — no hardcoded list), dialplan `600` loaded, `/var/spool/asterisk/monitor` writable by `asterisk`, `transcriber.service` active, venv python runnable, `openai-whisper` installed, base model cached, `watcher.py` present.
 
