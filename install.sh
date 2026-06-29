@@ -31,7 +31,7 @@ echo "==> apt prerequisites"
 $SUDO apt-get update -qq
 DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y --no-install-recommends \
   build-essential autoconf libtool pkg-config git wget ca-certificates gettext-base \
-  sngrep python3 python3-venv
+  sngrep python3 python3-venv rsync
 
 # ---- 2. build asterisk if not already at the target version ---------
 SRC=/usr/local/src/asterisk
@@ -75,6 +75,7 @@ $SUDO install -d -o asterisk -g asterisk -m 0750 /etc/asterisk/pjsip.d
 for ext in $SIP_EXTENSIONS; do
   pw_var="SIP_EXT_${ext}_PASSWORD"
   out=/etc/asterisk/pjsip.d/${ext}.conf
+  # shellcheck disable=SC2016  # envsubst whitelist must be literal, not expanded.
   SIP_EXT="$ext" SIP_EXT_PASSWORD="${!pw_var}" \
     envsubst '${SIP_EXT} ${SIP_EXT_PASSWORD}' \
     < asterisk/pjsip-endpoint.conf.tmpl \

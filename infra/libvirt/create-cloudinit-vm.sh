@@ -67,7 +67,9 @@ hostname: $DOMAIN
 manage_etc_hosts: true
 ssh_pwauth: false
 disable_root: true
-package_update: false
+package_update: true
+packages:
+  - rsync
 users:
   - default
   - name: $VM_USER

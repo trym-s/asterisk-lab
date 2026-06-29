@@ -1,0 +1,12 @@
+[rtpengine]
+interface  = ${SBC_IP}
+listen-ng  = 127.0.0.1:2223
+port-min   = 30000
+port-max   = 40000
+log-level  = 6
+log-facility = local1
+
+# Userspace forwarding only. The xt_RTPENGINE kernel module is not installed
+# in this lab; pin table=-1 so the daemon does not attempt to insert nftables
+# rules and log spurious "FAILED TO CREATE KERNEL TABLE" warnings at startup.
+table = -1
