@@ -4,6 +4,8 @@ End-to-end Asterisk 22 LTS setup on Debian/Ubuntu: source build, PJSIP softphone
 
 The deliverable is a repo you can clone onto a fresh Debian 13 / Ubuntu 26.04 box and bring up to a working Asterisk PBX with one command.
 
+An optional second VM adds an **OpenSIPS 3.6 LTS SBC** with rtpengine so both SIP signaling and RTP media travel host softphone ⇄ SBC ⇄ Asterisk. The SBC layer is described in [its own section](#adding-the-opensips-sbc-layer) below; Asterisk-only operation is unchanged.
+
 ---
 
 ## Quick start (on the target — a fresh Debian 13 / Ubuntu 26.04 VM)
@@ -118,15 +120,21 @@ ssh deb@192.168.122.20
 ## Repository layout
 
 ```
-Makefile                 install / verify / deploy / logs / clean (`make help`)
-install.sh               builds Asterisk + renders configs on the target VM
+Makefile                 install / verify / deploy / logs targets for both VMs (`make help`)
+install.sh               builds Asterisk + renders configs on the Asterisk VM
 asterisk/
   pjsip.conf.tmpl              transport + #include pjsip.d/*.conf
   pjsip-endpoint.conf.tmpl     rendered once per SIP_EXTENSIONS entry → pjsip.d/<ext>.conf
+                                   (AOR carries support_path=yes for the SBC path)
   extensions.conf.tmpl         answers extension 600 and records WAV calls
   rtp.conf
   asterisk.service             systemd unit for asterisk
   transcriber.service          systemd unit for the watcher (hardened)
+sbc/                     SBC VM (OpenSIPS 3.6 LTS + rtpengine)
+  opensips.cfg.tmpl            stateless proxy + Path + rtpengine-managed media
+  rtpengine.conf.tmpl          interface = ${SBC_IP}, 30000–40000, userspace
+  install.sh                   idempotent: apt repo, packages, render, RUN_OPENSIPS=yes
+  verify.sh                    11 smoke checks (services, sockets, parses, mi_fifo)
 scripts/
   transcribe.py                local-Whisper one-shot transcriber
   watcher.py                   polls monitor dir, transcribes new WAVs in place
@@ -134,25 +142,162 @@ scripts/
   requirements.txt             pinned openai-whisper + torch
   verify.sh                    smoke checks (asterisk, dialplan, transcriber)
 infra/libvirt/           optional libvirt convenience
-  asterisk-deb13.xml           domain XML using default pool + default network
-  asterisk-deb13-cloudinit.xml reference XML for the default cloud-init VM
-  create-cloudinit-vm.sh       downloads Debian cloud image + seed ISO + starts VM
-  setup-host.sh                host-side libvirt bootstrap
+  asterisk-deb13.xml                 domain XML using default pool + default network
+  asterisk-deb13-cloudinit.xml       reference XML for the default Asterisk cloud-init VM
+  opensips-sbc-deb13-cloudinit.xml   reference XML for the SBC cloud-init VM
+  create-cloudinit-vm.sh             downloads Debian cloud image + seed ISO + starts VM
+  setup-host.sh                      host-side libvirt bootstrap
 .github/workflows/
   lint.yml                     shellcheck + ruff on push/PR
 PROCESS.md               running log of decisions, errors, and fixes
-.env.example             secrets template (copy to .env, fill in, never commit)
+.env.example             config template (copy to .env, fill in, never commit)
 ```
+
+---
+
+## Adding the OpenSIPS SBC layer
+
+This step is optional. If you only need Asterisk, skip it — the rest of the
+repo continues to work exactly as before. Adding the SBC inserts an
+OpenSIPS 3.6 LTS proxy plus rtpengine between the host softphone and the
+Asterisk PBX so both SIP signaling and RTP media flow through it.
+
+Topology end-state (libvirt default NAT, IPs from DHCP):
+
+```text
+host (baresip)        opensips-sbc-deb13-cloudinit        asterisk-deb13-cloudinit
+                  SIP UDP 5060             SIP UDP 5060
+   ─────────────────────────► OpenSIPS ─────────────────────────►
+                                  │
+                                  └─ rtpengine (ng on 127.0.0.1:2223)
+                                       relays RTP UDP 30000–40000
+```
+
+OpenSIPS is a **stateless proxy** in this lab: it does not rewrite
+`Call-ID` or `From`/`To` tags, but it does stack a `Via`, insert
+`Record-Route`, add a `Path` on REGISTER, inject `Supported: path` so
+Asterisk accepts that Path, and call `rtpengine_offer/answer/delete` on
+INVITE/200/BYE to keep media flowing through the SBC. Topology-hiding
+B2BUA is parked for a follow-up.
+
+### 1. Provision the SBC VM
+
+Same libvirt cloud-init script as the Asterisk VM, with a different domain
+name and smaller resource caps (the SBC is light):
+
+```bash
+DOMAIN=opensips-sbc-deb13-cloudinit \
+DISK_SIZE=20G \
+MEMORY_GIB=2 \
+VCPUS=2 \
+  ./infra/libvirt/create-cloudinit-vm.sh
+
+virsh -c qemu:///system net-dhcp-leases default | grep opensips-sbc
+# e.g. 192.168.122.3   opensips-sbc-deb13-cloudinit
+```
+
+### 2. Place `.env` on the SBC VM
+
+The SBC needs to know its own IP (used in `socket=` and therefore in
+`Via` / `Record-Route` / `Path` headers) and the Asterisk VM's IP (the
+relay target). Both come from `virsh net-dhcp-leases default`.
+
+```bash
+ssh deb@<sbc-ip>
+cat > ~/asterisk-lab/.env <<EOF
+SBC_IP=<sbc-ip>
+ASTERISK_IP=<asterisk-ip>
+EOF
+```
+
+### 3. Deploy and verify
+
+From the host:
+
+```bash
+make deploy-sbc SBC_VM=deb@<sbc-ip>
+make verify-sbc SBC_VM=deb@<sbc-ip>   # ssh form; or run sbc/verify.sh on the VM directly
+```
+
+`deploy-sbc` rsyncs the repo and runs `sbc/install.sh` on the VM —
+idempotent: re-run any time after editing `sbc/opensips.cfg.tmpl` or
+`sbc/rtpengine.conf.tmpl`. `verify-sbc` prints one line per check:
+
+```text
+== opensips ==
+  opensips.service active                      OK
+  opensips 3.6.x installed                     OK
+  opensips.cfg parses                          OK
+  udp/5060 bound by opensips                   OK
+  mi_fifo present (0666)                       OK
+
+== rtpengine ==
+  rtpengine-daemon.service active              OK
+  udp/2223 bound by rtpengine                  OK
+  userspace mode (table=-1)                    OK
+  log-facility=local1                          OK
+
+== shared ==
+  rsyslog active (/var/log/syslog)             OK
+  sngrep installed                             OK
+
+11/11 OK
+```
+
+### 4. Point baresip at the SBC
+
+Edit `~/.baresip/accounts` on the host so the SIP domain in each account
+is the **SBC IP**, not Asterisk's:
+
+```text
+<sip:1001@<sbc-ip>>;auth_pass=<SIP_EXT_1001_PASSWORD>;transport=udp;regint=3600;answermode=auto;audio_codecs=opus,PCMU,PCMA
+<sip:1002@<sbc-ip>>;auth_pass=<SIP_EXT_1002_PASSWORD>;transport=udp;regint=3600;answermode=auto;audio_codecs=opus,PCMU,PCMA
+```
+
+Restart baresip. The auth passwords are unchanged — Asterisk still
+validates digest; the SBC is transparent to auth.
+
+Verify the registration crossed both legs:
+
+```bash
+ssh deb@<asterisk-ip> 'sudo asterisk -rx "pjsip show contacts"'
+# Contact: 1001/sip:1001@<host-ip>:<port>   Avail   RTT 1–3 ms
+
+ssh deb@<asterisk-ip> 'sudo asterisk -rx "pjsip show contact 1001/sip:1001@<host-ip>:<port>" | grep ^path'
+# path : <sip:<sbc-ip>;lr;received=sip:<host-ip>:<port>>
+```
+
+Two side-by-side `sudo sngrep -d any port 5060` windows (one on the SBC
+VM, one on the Asterisk VM) show the full REGISTER + INVITE flow on
+their respective legs.
+
+### 5. Live observation
+
+Both OpenSIPS and rtpengine route to syslog:
+
+```bash
+ssh deb@<sbc-ip> 'sudo tail -f /var/log/syslog'        # or: make logs-sbc
+                                                       # opensips lines: facility local0
+                                                       # rtpengine lines: facility local1
+ssh deb@<sbc-ip> 'sudo tcpdump -i any -n udp portrange 30000-40000'   # RTP through rtpengine
+```
+
+If `tcpdump` on those ports shows zero packets during an active call
+while audio is working, RTP is bypassing the SBC — typical cause is
+`rtpengine_offer()` returning error (check `/var/log/syslog`).
 
 ---
 
 ## Verification after install
 
 ```bash
-make verify                                     # 10 checks; exits non-zero on first failure
+make verify                                     # asterisk lab: 10+ checks; exits non-zero on first failure
+make verify-sbc SBC_VM=deb@<sbc-ip>             # (optional) SBC lab: 11 checks
 ```
 
 `verify.sh` covers `asterisk.service` active, version, each PJSIP endpoint listed in `/etc/asterisk/pjsip.d/` present (discovered at runtime — no hardcoded list), dialplan `600` loaded, `/var/spool/asterisk/monitor` writable by `asterisk`, `transcriber.service` active, venv python runnable, `openai-whisper` installed, base model cached, `watcher.py` present.
+
+`sbc/verify.sh` covers `opensips.service` + `rtpengine-daemon.service` active, opensips 3.6 binary present, `opensips.cfg` parses, UDP `5060` bound by opensips, UDP `2223` bound by rtpengine, MI FIFO present, rtpengine in userspace mode + log-facility `local1`, rsyslog active (so `/var/log/syslog` exists), and sngrep installed.
 
 For a manual look:
 
@@ -190,7 +335,7 @@ The brief asks for **microsip**, which is Windows-only. On Linux the equivalent 
 
 ## Baresip client
 
-On the host, install baresip and add one account per extension in `SIP_EXTENSIONS` to `~/.baresip/accounts`:
+On the host, install baresip and add one account per extension in `SIP_EXTENSIONS` to `~/.baresip/accounts`. The SIP domain after the `@` is whichever VM you want baresip to register against — the Asterisk VM IP for direct-to-Asterisk operation, or the SBC VM IP if you have the SBC layer up:
 
 ```text
 <sip:1001@192.168.122.20>;auth_pass=<SIP_EXT_1001_PASSWORD>;transport=udp;regint=3600;answermode=auto;audio_codecs=opus,PCMU,PCMA
@@ -230,7 +375,10 @@ Asterisk answers extension `600`, runs `MixMonitor`, and writes WAV files here:
 
 ## SIP signaling reference
 
-With `sudo sngrep -d any port 5060` running on the VM, a baresip REGISTER followed by `/dial sip:600@<VM IP>` produces the following message flow (each line is one SIP message visible in sngrep):
+### Without SBC (direct baresip ↔ Asterisk)
+
+With `sudo sngrep -d any port 5060` running on the Asterisk VM, a baresip
+REGISTER followed by `/dial sip:600@<asterisk-ip>` produces:
 
 ```text
 REGISTER (no auth)              → 401 Unauthorized
@@ -244,6 +392,40 @@ BYE                             → 200 OK
 ```
 
 If REGISTER never reaches `200 OK`: check the digest password matches `.env`, that UDP 5060 is reachable from host to VM, and `journalctl -u asterisk -n 50` for `WWW-Authenticate` mismatches.
+
+### With SBC (baresip → OpenSIPS → Asterisk)
+
+Same flow, now visible on **two** sngrep windows side-by-side — one on the
+SBC VM, one on the Asterisk VM. On each leg the message shape is the same
+six-step exchange (REGISTER+401+REGISTER+200, INVITE+Trying+Ringing+200,
+ACK, BYE+200). What differs is what the SBC injects between the legs:
+
+| Header / SDP element        | Direct        | Through SBC                                  |
+|-----------------------------|---------------|----------------------------------------------|
+| `Via:` stack                | one hop       | two hops (SBC's `Via` on top of baresip's)   |
+| `Record-Route:` on INVITE   | absent        | present, pointing at SBC                     |
+| `Path:` on REGISTER         | absent        | present, pointing at SBC                     |
+| `Supported: path` on REGISTER | absent      | injected by SBC so Asterisk accepts Path     |
+| SDP `c=` (connection IP)    | softphone IP  | SBC IP (rewritten by rtpengine)              |
+| SDP `m=` audio port         | softphone port| port from rtpengine's 30000–40000 range      |
+| RTP path                    | host ↔ Asterisk direct | host ↔ SBC:30000-40000 ↔ Asterisk |
+
+On the Asterisk side, `pjsip show contact <ext>/<uri>` confirms the SBC
+took effect: the `path:` line is populated with the SBC URI, and
+`via_addr` / `via_port` show the softphone's true location.
+
+If REGISTER returns `420 Bad Extension`: the SBC must inject
+`Supported: path` (RFC 3327 requires the UAC's consent before a proxy
+inserts Path; baresip does not advertise it). `sbc/opensips.cfg.tmpl`
+does this with `append_hf("Supported: path\r\n")` immediately before
+`add_path_received()`.
+
+If RTP goes the wrong way (audio works but `tcpdump -i any -n udp
+portrange 30000-40000` on the SBC sees nothing): `rtpengine_offer()` /
+`_answer()` may be failing — `/var/log/syslog` on the SBC shows the
+reason. Tighten the `onreply_route` gate to fire only on INVITE
+responses with SDP if rtpengine reports "Unknown call-id" on non-INVITE
+200s (Asterisk's qualify OPTIONS can return SDP from baresip).
 
 ## Transcripts
 
@@ -285,6 +467,8 @@ sudo ./scripts/setup-transcriber.sh
 
 ## Agent context
 
-This repo includes `AGENTS.md` so future agent runs keep the same lab assumptions: templates under `asterisk/*.tmpl` are the source of truth, secrets stay in `.env`, the Linux softphone is baresip, endpoints live in `SIP_EXTENSIONS`, and extension `600` records WAV files under `/var/spool/asterisk/monitor/`.
+This repo includes `AGENTS.md` so future agent runs keep the same lab assumptions: templates under `asterisk/*.tmpl` and `sbc/*.tmpl` are the sources of truth, secrets and per-VM config (`SBC_IP`, `ASTERISK_IP`, SIP passwords) stay in `.env`, the Linux softphone is baresip, endpoints live in `SIP_EXTENSIONS`, and extension `600` records WAV files under `/var/spool/asterisk/monitor/`.
 
 Project-level skills under `.claude/skills/` document the most common ops flows — adding/removing a SIP endpoint, deploying to the lab VM, debugging registration failures, rotating passwords. Read the matching skill before acting on those tasks.
+
+`PROCESS.md` is the running operational log: design decisions, evolved configs, and the full trail of bugs surfaced while bringing the SBC layer up (password drift, OpenSIPS binding `0.0.0.0` leaking into headers, RFC 3327 `Supported: path` requirement, and gating `rtpengine_answer()` to INVITE-only). Reach for it when an SBC-related decision needs context.
