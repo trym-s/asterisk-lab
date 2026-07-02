@@ -12,7 +12,12 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APPDIR=/opt/transcriber
 VENV=$APPDIR/venv
+# `base` is the watcher.py default and hallucinates on 8 kHz telephony audio;
+# override at deploy time (e.g. WHISPER_MODEL=small make deploy) to bake a
+# better model into the systemd drop-in written below. Leaving LANGUAGE empty
+# means auto-detect; set to "en", "tr", … to force.
 MODEL="${WHISPER_MODEL:-base}"
+LANGUAGE="${WHISPER_LANGUAGE:-}"
 
 SUDO=$([ "$(id -u)" -eq 0 ] && echo "" || echo "sudo")
 
@@ -57,8 +62,20 @@ as_user asterisk env HOME=/var/lib/asterisk XDG_CACHE_HOME=/var/lib/asterisk/.ca
 echo "==> systemd unit"
 $SUDO install -m 0644 "$REPO_ROOT/asterisk/transcriber.service" \
   /etc/systemd/system/transcriber.service
+
+echo "==> systemd drop-in: WHISPER_MODEL=$MODEL WHISPER_LANGUAGE=${LANGUAGE:-<auto-detect>}"
+$SUDO install -d -m 0755 /etc/systemd/system/transcriber.service.d
+{
+  echo "[Service]"
+  echo "Environment=WHISPER_MODEL=$MODEL"
+  if [ -n "$LANGUAGE" ]; then
+    echo "Environment=WHISPER_LANGUAGE=$LANGUAGE"
+  fi
+} | $SUDO tee /etc/systemd/system/transcriber.service.d/model.conf >/dev/null
+
 $SUDO systemctl daemon-reload
 $SUDO systemctl enable --now transcriber.service
+$SUDO systemctl restart transcriber.service
 
 echo
 echo "done. verify:"
