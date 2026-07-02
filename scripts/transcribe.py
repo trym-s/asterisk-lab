@@ -16,9 +16,9 @@ def main():
         sys.exit(1)
 
     import whisper
-    model = whisper.load_model("base")
+    model = whisper.load_model("small")
 
-    result = model.transcribe(str(wav_path), language="tr")
+    result = model.transcribe(str(wav_path))
     text = result["text"].strip()
 
     output_path = wav_path.with_suffix(".txt")
