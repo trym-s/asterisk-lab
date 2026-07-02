@@ -22,13 +22,12 @@ exten => 600,1,NoOp(Baresip lab call from ${CALLERID(all)} to ${EXTEN})
  same => n,Hangup()
 
 ; Direct dial between softphones (e.g. 1001 dials 1002). Pattern _10XX matches
-; any 4-digit extension in 1000-1099 — keeps the dialplan in lockstep with
-; SIP_EXTENSIONS without templating extensions.conf per endpoint.
-exten => _10XX,1,NoOp(Inbound call: ${CALLERID(all)} -> ${EXTEN})
+; any 4-digit extension in 1000-1099. Dial() creates a second channel to the
+; called endpoint; Asterisk bridges the two — this is the B2BUA path.
+exten => _10XX,1,NoOp(Bridge call: ${CALLERID(num)} -> ${EXTEN})
  same => n,Set(RECORDING_FILE=${MONITOR_DIR}/${STRFTIME(${EPOCH},,%Y%m%d-%H%M%S)}-${CALLERID(num)}-${EXTEN}-${UNIQUEID}.wav)
- same => n,Answer()
  same => n,MixMonitor(${RECORDING_FILE})
- same => n,Echo()
+ same => n,Dial(PJSIP/${EXTEN},20)
  same => n,Hangup()
 
 exten => h,1,NoOp(Call ended. Recording file was ${RECORDING_FILE})
