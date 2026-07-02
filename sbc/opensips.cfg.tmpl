@@ -70,11 +70,19 @@ route {
     }
 
     # 4) Initial INVITE — pin the dialog to this SBC via Record-Route,
-    #    rewrite SDP through rtpengine, then relay upstream to Asterisk.
+    #    rewrite SDP through rtpengine, then relay. Direction matters:
+    #    - From a softphone → set $du to Asterisk (registrar/PBX).
+    #    - From Asterisk (outbound B2BUA leg toward a registered contact,
+    #      e.g. Dial(PJSIP/<ext>) → INVITE sip:<ext>@<softphone-addr>)
+    #      → do NOT override $du; let t_relay follow the R-URI so the
+    #      INVITE reaches the softphone. Overriding $du here would loop
+    #      the outbound leg back to Asterisk and it would 401 itself.
     if (is_method("INVITE")) {
         record_route();
         rtpengine_offer();
-        $du = "sip:${ASTERISK_IP}:5060";
+        if ($si != "${ASTERISK_IP}") {
+            $du = "sip:${ASTERISK_IP}:5060";
+        }
         t_relay();
         exit;
     }
