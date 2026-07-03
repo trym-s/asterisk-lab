@@ -171,9 +171,17 @@ step "defining and starting $DOMAIN"
 "${VIRSH[@]}" define "$DOMAIN_XML"
 "${VIRSH[@]}" start "$DOMAIN"
 
-step "waiting briefly for DHCP lease"
-sleep 8
-"${VIRSH[@]}" domifaddr "$DOMAIN" --source lease || true
+step "waiting for DHCP lease (up to ${LEASE_WAIT_SECS:-120}s)"
+lease_deadline=$(( $(date +%s) + ${LEASE_WAIT_SECS:-120} ))
+lease_output=""
+while [ "$(date +%s)" -lt "$lease_deadline" ]; do
+  lease_output=$("${VIRSH[@]}" domifaddr "$DOMAIN" --source lease 2>/dev/null || true)
+  if printf '%s\n' "$lease_output" | grep -qE 'ipv4|[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'; then
+    break
+  fi
+  sleep 3
+done
+printf '%s\n' "$lease_output"
 
 cat <<EOF
 
