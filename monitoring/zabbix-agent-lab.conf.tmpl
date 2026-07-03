@@ -1,0 +1,6 @@
+# Lab-specific passive checks. Values are numeric for simple Zabbix items:
+# 1 = active/available, 0 = inactive/unavailable.
+UserParameter=lab.systemd.active[*],systemctl is-active --quiet "$1" && echo 1 || echo 0
+UserParameter=lab.opensips.mi.ping,/usr/local/bin/opensips-mi-zabbix ping
+UserParameter=lab.opensips.stat[*],/usr/local/bin/opensips-mi-zabbix stat "$1"
+UserParameter=lab.opensips.raw[*],/usr/local/bin/opensips-mi-zabbix raw "$1"

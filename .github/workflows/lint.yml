@@ -13,7 +13,7 @@ jobs:
       - name: install shellcheck
         run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
       - name: shellcheck shell scripts
-        run: shellcheck install.sh scripts/*.sh sbc/*.sh
+        run: shellcheck install.sh scripts/*.sh sbc/*.sh monitoring/*.sh
 
   ruff:
     runs-on: ubuntu-latest
