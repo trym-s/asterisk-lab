@@ -67,8 +67,12 @@ services:
       # Shared usage log across LiveKit + Pipecat + test-caller lanes.
       # services/common/usage.py writes here; services/common/usage_summary.py reads.
       - /var/lib/voicebot:/var/lib/voicebot
-      # services/common Python helpers (usage.py) — bind-mounted, not built in,
-      # so a `make deploy-voicebot-livekit` after editing common/ picks it up
-      # without a rebuild.
+      # services/common Python helpers (usage.py, docqa.py) — bind-mounted,
+      # not built in, so a `make deploy-voicebot-livekit` after editing
+      # common/ picks up code changes without a rebuild.
       - ../common:/opt/voicebot-common:ro
+      # Repo root — corpus for docqa.py. The tool reads README/PROCESS/AGENTS
+      # from here. Read-only. Same path is used by the Pipecat lane so both
+      # lanes retrieve from an identical corpus.
+      - ../..:/opt/voicebot-docs:ro
     depends_on: [livekit-server]

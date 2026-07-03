@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# Play every audio/*.wav into a target extension sequentially, log per-call
+# metrics, and print a summary. Drives the currently running baresip via its
+# ctrl_tcp module (127.0.0.1:4444 by default) — the operator's baresip must
+# already be registered as 1001 (or whichever caller ext) before invoking.
+#
+# One-time baresip setup: add `module ctrl_tcp.so` to ~/.baresip/config, then
+# restart baresip. Verify with `ss -ltnp | grep 4444`.
+#
+# Usage:
+#   ./run-suite.sh 1099             # LiveKit lane
+#   ./run-suite.sh 1098             # Pipecat lane (once it exists)
+#   TARGET=1099 SETTLE=5 ./run-suite.sh
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$HERE/../.." && pwd)"
+
+TARGET="${1:-${TARGET:-1099}}"
+CTRL_HOST="${CTRL_HOST:-127.0.0.1}"
+CTRL_PORT="${CTRL_PORT:-4444}"
+# Seconds to wait AFTER the WAV ends before hanging up — long enough for the
+# agent to run STT → LLM → TTS AND finish speaking. Empirically 8s clips
+# multi-sentence replies mid-word; 15s covers a ~40-word Turkish response
+# (VAD close + Whisper ~1s + GPT ~1s + TTS ~10s at tts-1 speeds).
+SETTLE="${SETTLE:-15}"
+# Seconds between /dial firing and the WAV being made the audio source.
+# Without this, ausrc is set and dial fires while the bot's greeting is still
+# playing back on the caller side; the bot's VAD is holding its own turn and
+# doesn't hear the WAV cleanly — Whisper transcribes only the tail. 3 s covers
+# the ~1 s SIP setup + a ~2 s "Merhaba, Mavi Kapı..." greeting.
+PREROLL="${PREROLL:-3}"
+LOG_DIR="$HERE/runs/$(date +%Y%m%d-%H%M%S)-$TARGET"
+mkdir -p "$LOG_DIR"
+
+# ---- ctrl_tcp helpers -----------------------------------------------
+# Protocol: netstring framing. `<len>:<payload>,` where payload is JSON like
+# {"command":"dial","params":"1099","token":"tok1"}.
+send_cmd() {
+  local cmd="$1" params="$2"
+  local payload="{\"command\":\"$cmd\",\"params\":\"$params\",\"token\":\"t$$\"}"
+  local frame="${#payload}:${payload},"
+  printf '%s' "$frame" | nc -q1 -w2 "$CTRL_HOST" "$CTRL_PORT" || true
+}
+
+# ---- preflight ------------------------------------------------------
+if ! (echo >/dev/tcp/$CTRL_HOST/$CTRL_PORT) 2>/dev/null; then
+  echo "ERROR: baresip ctrl_tcp not reachable at $CTRL_HOST:$CTRL_PORT"
+  echo "Fix: add 'module ctrl_tcp.so' to ~/.baresip/config and restart baresip"
+  exit 1
+fi
+command -v nc >/dev/null || { echo "nc (netcat) required"; exit 1; }
+
+SILENCE="$HERE/audio/00-silence.wav"
+[ -f "$SILENCE" ] || {
+  echo "==> generating 2 s silence WAV at $SILENCE (used as pre-source)";
+  ffmpeg -y -loglevel error -f lavfi -i "anullsrc=r=16000:cl=mono" -t 2 \
+    -c:a pcm_s16le "$SILENCE";
+}
+
+shopt -s nullglob
+# Skip the silence primer when iterating utterances.
+wavs=( $(ls "$HERE"/audio/*.wav 2>/dev/null | grep -v '00-silence.wav') )
+[ ${#wavs[@]} -gt 0 ] || { echo "no WAVs under $HERE/audio/"; exit 1; }
+
+echo "==> target ext: $TARGET  |  utterances: ${#wavs[@]}  |  log dir: $LOG_DIR"
+echo
+
+# Make sure the aufile ausrc/auplay module is loaded. Baresip drops it on
+# restart if the config doesn't include `module aufile.so`, and without it
+# every `/ausrc aufile,...` silently no-ops → the caller side stays on
+# ALSA, the bot's own TTS loops back through the host speakers, and Whisper
+# transcribes hallucinations from the feedback. Idempotent: baresip returns
+# "already loaded" the second time.
+send_cmd insmod "aufile"
+sleep 0.2
+
+# ---- run loop -------------------------------------------------------
+for wav in "${wavs[@]}"; do
+  id=$(basename "$wav" .wav)
+  # Duration used to time the hangup; falls back to 5s if ffprobe missing.
+  dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$wav" 2>/dev/null || echo 5)
+  dur_int=${dur%.*}
+  wait_total=$(( dur_int + SETTLE ))
+
+  printf "  %-25s dur=%.1fs  wait=%ds\n" "$id" "$dur" "$wait_total"
+
+  # Set source to a 2 s silence WAV first, THEN dial. This prevents the host
+  # ALSA mic (default source at boot) from feeding speaker echo of the bot's
+  # greeting back through Whisper — the exact feedback loop that produced
+  # bogus "Merhaba, sizi duyabiliyorum" transcriptions before we caught it.
+  # After PREROLL (bot greeting done), switch to the real utterance.
+  send_cmd ausrc "aufile,$SILENCE"
+  sleep 0.2
+  send_cmd dial "$TARGET"
+  sleep "$PREROLL"
+  send_cmd ausrc "aufile,$wav"
+
+  # Let the WAV play through + SETTLE for the agent reply.
+  sleep "$wait_total"
+
+  send_cmd hangup ""
+  sleep 2  # tail-end teardown + settle before next dial
+done
+
+# ---- summary --------------------------------------------------------
+echo
+echo "==> local usage delta (last ${#wavs[@]} utterances gen'd earlier)"
+python3 "$REPO_ROOT/services/common/usage_summary.py" \
+  --log "$HOME/.local/state/voicebot/usage.jsonl" --since 1h 2>&1 || true
+
+echo
+echo "==> remote usage delta (LiveKit / Pipecat agent lanes)"
+ssh deb@192.168.122.247 \
+  "python3 ~/asterisk-lab/services/common/usage_summary.py --since 5m" 2>&1 || \
+  echo "  (couldn't reach VM — run manually: make usage-summary)"
+
+echo
+echo "done. VM-side agent logs since suite:"
+echo "  ssh deb@192.168.122.247 'sudo docker logs lk-agent --since 5m | grep -E \"user=|agent=|joined room\"'"
