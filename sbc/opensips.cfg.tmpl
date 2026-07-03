@@ -31,10 +31,29 @@ modparam("rtpengine", "rtpengine_sock", "udp:127.0.0.1:2223")
 loadmodule "mi_fifo.so"
 modparam("mi_fifo", "fifo_name", "/run/opensips/opensips_fifo")
 modparam("mi_fifo", "fifo_mode", 0666)
+modparam("mi_fifo", "reply_dir", "/run/opensips/")
+
+# Flood defence. pike samples request rate per source IP; an IP that
+# exceeds reqs_density_per_unit within sampling_time_unit seconds is
+# marked "hot" for remove_latency seconds, and pike_check_req() returns
+# false for subsequent requests from it. Tuned loose for the lab —
+# tighten for production.
+loadmodule "pike.so"
+modparam("pike", "sampling_time_unit", 2)
+modparam("pike", "reqs_density_per_unit", 20)
+modparam("pike", "remove_latency", 60)
 
 ####### Routing Logic ########
 
 route {
+    # 0) Flood defence — cheap check first so a flooder cannot even
+    #    reach maxfwd, loose_route, etc.
+    if (!pike_check_req()) {
+        xlog("L_WARN", "[SBC] pike: dropping request from $si (flood)\n");
+        sl_send_reply(503, "Service Unavailable");
+        exit;
+    }
+
     # 1) Max-Forwards sanity
     if (!mf_process_maxfwd_header(10)) {
         sl_send_reply(483, "Too Many Hops");
