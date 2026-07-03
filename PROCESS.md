@@ -1418,3 +1418,283 @@ sudo grep -c -E 'ERROR|Unknown call-id|can.t extract' /var/log/syslog
 
 Clean retest call also leaves zero new errors (call 2: `20260628-201947-1001-600-....wav`, 631 KB).
 
+## Monitoring VM: Zabbix + Grafana
+
+Added a third VM role:
+
+```text
+monitoring-deb13-cloudinit        current DHCP: 192.168.122.13
+  PostgreSQL 17
+  Zabbix 7.0 LTS server + Apache PHP frontend
+  zabbix-agent2
+  Grafana 13.1
+  Grafana Zabbix plugin
+
+asterisk-deb13-cloudinit          current DHCP: 192.168.122.247
+  zabbix-agent2
+
+opensips-sbc-deb13-cloudinit      current DHCP: 192.168.122.3
+  zabbix-agent2
+  OpenSIPS MI FIFO metric helper
+```
+
+The monitoring VM is provisioned by repo-owned files under `monitoring/`.
+Do not hand-edit rendered monitoring state and expect it to survive; rerun
+the matching script:
+
+```text
+monitoring/install.sh                  monitoring VM installer
+monitoring/setup-zabbix-agent.sh       zabbix-agent2 setup for lab nodes
+monitoring/verify.sh                   monitoring VM smoke checks
+monitoring/verify-agent.sh             monitored-node agent checks
+monitoring/zabbix-web.conf.php.tmpl    rendered to /etc/zabbix/web/zabbix.conf.php
+monitoring/zabbix-agent-lab.conf.tmpl  rendered to /etc/zabbix/zabbix_agent2.d/lab.conf
+monitoring/opensips-mi.py              installed as /usr/local/bin/opensips-mi-zabbix
+monitoring/provision-observability.py  creates Zabbix host/items through Zabbix API
+monitoring/grafana-*.yaml/json         datasource + dashboard file provisioning
+```
+
+Make targets added:
+
+```bash
+make deploy-monitoring MONITORING_VM=deb@192.168.122.13
+make deploy-agent-asterisk VM=deb@192.168.122.247
+make deploy-agent-sbc SBC_VM=deb@192.168.122.3
+make verify-monitoring
+make verify-zabbix-agent
+```
+
+Because this host currently has a bad global SSH config include ownership
+(`/etc/ssh/ssh_config.d/20-systemd-ssh-proxy.conf`), lab deploys were run
+with:
+
+```bash
+SSH="ssh -F /dev/null"
+```
+
+The Makefile now passes `$(SSH)` to rsync via `RSYNC_SSH ?= $(SSH)`, so the
+same override works for both the SSH command and the rsync transport.
+
+### Monitoring secrets and per-VM env
+
+`.env` is still excluded from deploy. Monitoring-specific names in
+`.env.example`:
+
+```text
+MONITORING_IP=
+ZABBIX_DB_PASSWORD=
+ZABBIX_VERSION=7.0
+```
+
+The monitoring VM needs `MONITORING_IP`, `ZABBIX_DB_PASSWORD`, and
+`ZABBIX_VERSION` in its local `~/asterisk-lab/.env`.
+
+Monitored nodes need at least:
+
+```text
+MONITORING_IP=192.168.122.13
+ZABBIX_VERSION=7.0
+```
+
+The SBC also needs fresh SIP routing IPs:
+
+```text
+SBC_IP=192.168.122.3
+ASTERISK_IP=192.168.122.247
+```
+
+This was an actual failure: SBC `.env` still had `ASTERISK_IP=192.168.122.20`
+after DHCP changed Asterisk to `192.168.122.247`. OpenSIPS relayed REGISTER
+to the stale IP and baresip saw `408 Request Timeout`. Updating `.env` and
+rerunning `make deploy-sbc` fixed the 408.
+
+### Zabbix frontend fixes learned
+
+Two frontend pitfalls were fixed in `monitoring/install.sh` and
+`monitoring/zabbix-web.conf.php.tmpl`:
+
+1. Zabbix web showed `DB type "POSTGRESQL" is not supported... MYSQL`.
+   Cause: `php-pgsql` was missing. The installer now installs `php-pgsql`,
+   and `monitoring/verify.sh` checks `php -m` includes `pgsql`.
+2. Zabbix dashboard showed `Locale for language "en_US" is not found`.
+   Cause: Debian cloud image only had `C`, `C.utf8`, and `POSIX`. The
+   installer now enables and runs `locale-gen en_US.UTF-8`.
+3. Zabbix dashboard raised Elasticsearch errors such as
+   `file_get_contents(/uint*/_search)`. Cause: the rendered Zabbix web config
+   set `$HISTORY['types']` despite no Elasticsearch URL. The template now uses:
+
+```php
+$HISTORY['url'] = '';
+$HISTORY['types'] = [];
+```
+
+### OpenSIPS metrics path
+
+`opensips-cli` / `opensipsctl` are not available in the current SBC APT
+sources. `apt.opensips.org` for this VM exposes OpenSIPS core/modules but no
+`opensips-cli` package. OpenSIPS 3.6's `mi_fifo` module is already loaded, so
+metrics use the official MI FIFO JSON-RPC transport.
+
+OpenSIPS 3.6 FIFO syntax is JSON-RPC, not the older line-oriented command
+format:
+
+```text
+:reply_fifo:{"jsonrpc":"2.0","method":"get_statistics","id":"...","params":[["all"]]}
+```
+
+The old `:get_statistics:reply_fifo\nall\n\n` shape logs
+`mi_fifo_callback: cannot parse command`.
+
+Linux protected FIFOs also matter. `/tmp` reply FIFOs fail with permission
+errors when caller and OpenSIPS users differ. The SBC template now sets:
+
+```text
+modparam("mi_fifo", "reply_dir", "/run/opensips/")
+```
+
+`monitoring/setup-zabbix-agent.sh` installs `/usr/local/bin/opensips-mi-zabbix`,
+adds `zabbix` to the `opensips` group, sets `/run/opensips` to group-writable,
+and installs a tmpfiles rule:
+
+```text
+d /run/opensips 0775 opensips opensips -
+```
+
+The helper creates reply FIFOs under `/run/opensips`, changes their group to
+`opensips`, uses a 5 s timeout, and talks JSON-RPC over
+`/run/opensips/opensips_fifo`.
+
+### Zabbix items collected from OpenSIPS/SBC
+
+Zabbix host:
+
+```text
+host: opensips-sbc-deb13-cloudinit
+visible name: OpenSIPS SBC
+group: Asterisk Lab
+agent interface: 192.168.122.3:10050
+```
+
+Provisioned item keys:
+
+```text
+lab.opensips.mi.ping
+lab.opensips.stat[rcv_requests]
+lab.opensips.stat[fwd_requests]
+lab.opensips.stat[drop_requests]
+lab.opensips.stat[err_requests]
+lab.opensips.stat[2xx_transactions]
+lab.opensips.stat[4xx_transactions]
+lab.opensips.stat[5xx_transactions]
+lab.opensips.stat[used_size]
+lab.opensips.stat[free_size]
+lab.systemd.active[opensips]
+lab.systemd.active[rtpengine-daemon]
+```
+
+Live validation examples from the monitoring VM:
+
+```bash
+zabbix_get -s 192.168.122.3 -k lab.opensips.mi.ping
+# 1
+
+zabbix_get -s 192.168.122.3 -k 'lab.opensips.stat[used_size]'
+# 3511312
+
+zabbix_get -s 192.168.122.3 -k 'lab.opensips.stat[free_size]'
+# 63539488
+```
+
+After a baresip REGISTER storm, OpenSIPS counters were visible through Zabbix:
+
+```bash
+zabbix_get -s 192.168.122.3 -k 'lab.opensips.stat[rcv_requests]'
+# 23 before OpenSIPS restart, reset to 2 after restart
+```
+
+Counters are OpenSIPS process counters and reset when OpenSIPS restarts.
+
+### Grafana
+
+Grafana plugin:
+
+```text
+alexanderzobnin-zabbix-app @ 6.4.1
+datasource type: alexanderzobnin-zabbix-datasource
+```
+
+Grafana file provisioning installed:
+
+```text
+/etc/grafana/provisioning/datasources/zabbix.yaml
+/etc/grafana/provisioning/dashboards/asterisk-lab.yaml
+/var/lib/grafana/dashboards/asterisk-lab/opensips-sbc-overview.json
+```
+
+Dashboard URL:
+
+```text
+http://192.168.122.13:3000/d/opensips-sbc-overview/opensips-sbc-overview
+```
+
+Dashboard panels:
+
+```text
+OpenSIPS MI status
+OpenSIPS + rtpengine service status
+SIP request counters
+2xx / 4xx / 5xx transaction counters
+OpenSIPS shared memory used/free
+```
+
+Grafana default `admin/admin` worked initially but was later no longer valid,
+so the password was changed through the UI or by Grafana first-login flow.
+The repo does not store the current Grafana admin password.
+
+### Current verification status
+
+Known-good checks after monitoring work:
+
+```text
+monitoring/verify.sh on monitoring VM: 20/20 OK
+monitoring/verify-agent.sh on SBC:     7/7 OK
+sbc/verify.sh on SBC:                  11/11 OK
+```
+
+Zabbix API verified:
+
+```text
+Zabbix API version: 7.0.27
+OpenSIPS SBC host exists with 12 provisioned items
+```
+
+Host web checks:
+
+```text
+http://192.168.122.13/zabbix/      -> 200
+http://192.168.122.13:3000/login   -> 200
+Grafana dashboard URL              -> 302 to login/dashboard
+```
+
+### Baresip registration after monitoring/SBC changes
+
+The initial post-monitoring registration failure had two separate causes:
+
+1. `408 Request Timeout` from OpenSIPS:
+   SBC `.env` had stale `ASTERISK_IP=192.168.122.20`. Current Asterisk IP is
+   `192.168.122.247`. Updating `.env` and rerunning `make deploy-sbc` fixed
+   relay routing.
+2. Repeating `401 Unauthorized` from Asterisk:
+   Asterisk logs showed `Failed to authenticate`. Host `~/.baresip/accounts`
+   passwords did not match the Asterisk VM `.env` values for 1001/1002. The
+   host baresip accounts were updated from the VM `.env` without printing the
+   secret values.
+
+Reminder: one `401 Unauthorized` is normal in SIP digest auth. A healthy flow is:
+
+```text
+REGISTER -> 401 Unauthorized
+REGISTER with Authorization -> 200 OK
+```
+
+Repeated 401s with `Failed to authenticate` mean password drift.

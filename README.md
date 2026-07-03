@@ -4,7 +4,7 @@ End-to-end Asterisk 22 LTS setup on Debian/Ubuntu: source build, PJSIP softphone
 
 The deliverable is a repo you can clone onto a fresh Debian 13 / Ubuntu 26.04 box and bring up to a working Asterisk PBX with one command.
 
-An optional second VM adds an **OpenSIPS 3.6 LTS SBC** with rtpengine so both SIP signaling and RTP media travel host softphone ⇄ SBC ⇄ Asterisk. The SBC layer is described in [its own section](#adding-the-opensips-sbc-layer) below; Asterisk-only operation is unchanged.
+An optional second VM adds an **OpenSIPS 3.6 LTS SBC** with rtpengine so both SIP signaling and RTP media travel host softphone ⇄ SBC ⇄ Asterisk. A third VM can run **Zabbix 7.0 LTS + Grafana** for lab monitoring. The SBC and monitoring layers are described in their own sections below; Asterisk-only operation is unchanged.
 
 ---
 
@@ -147,6 +147,12 @@ infra/libvirt/           optional libvirt convenience
   opensips-sbc-deb13-cloudinit.xml   reference XML for the SBC cloud-init VM
   create-cloudinit-vm.sh             downloads Debian cloud image + seed ISO + starts VM
   setup-host.sh                      host-side libvirt bootstrap
+monitoring/               Monitoring VM (Zabbix 7.0 LTS + PostgreSQL + Grafana)
+  install.sh                    idempotent monitoring stack installer
+  setup-zabbix-agent.sh         idempotent zabbix-agent2 installer for lab nodes
+  zabbix-web.conf.php.tmpl      rendered frontend config for /etc/zabbix/web
+  verify.sh                     monitoring VM smoke checks
+  verify-agent.sh               monitored-node agent smoke checks
 .github/workflows/
   lint.yml                     shellcheck + ruff on push/PR
 PROCESS.md               running log of decisions, errors, and fixes
@@ -304,12 +310,91 @@ ssh deb@<sbc-ip> 'cd ~/asterisk-lab && sudo ./sbc/verify.sh'   # (optional) SBC 
 
 `sbc/verify.sh` covers `opensips.service` + `rtpengine-daemon.service` active, opensips 3.6 binary present, `opensips.cfg` parses, UDP `5060` bound by opensips, UDP `2223` bound by rtpengine, MI FIFO present, rtpengine in userspace mode + log-facility `local1`, rsyslog active (so `/var/log/syslog` exists), and sngrep installed.
 
+`monitoring/verify.sh` covers PostgreSQL, the Zabbix database/schema, `zabbix-server`, local `zabbix-agent2`, Apache, Grafana, Zabbix/Grafana listening ports, local `zabbix_get`, and the Grafana Zabbix plugin. `monitoring/verify-agent.sh` covers `zabbix-agent2` on monitored nodes.
+
 For a manual look:
 
 ```bash
 sudo asterisk -rx 'pjsip show endpoints'        # one entry per SIP_EXTENSIONS; Unavailable until softphone registers
 sudo asterisk -rx 'pjsip show contacts'         # populated after baresip REGISTER
 journalctl -u asterisk -u transcriber -f        # or: make logs (over SSH to $(VM))
+```
+
+## Adding the monitoring VM
+
+The monitoring layer adds a third Debian 13 cloud-init VM running Zabbix
+7.0 LTS with PostgreSQL, Apache-hosted Zabbix frontend, Grafana, and the
+Grafana Zabbix plugin.
+
+```text
+host / operator browser
+          │
+          ▼
+monitoring-deb13-cloudinit
+  Zabbix UI     http://<monitoring-ip>/zabbix
+  Grafana       http://<monitoring-ip>:3000
+  Zabbix server tcp/10051
+          ▲
+          │ zabbix-agent2 tcp/10050
+          ├── asterisk-deb13-cloudinit
+          └── opensips-sbc-deb13-cloudinit
+```
+
+### 1. Provision the monitoring VM
+
+Reuse the generic cloud-init VM creator:
+
+```bash
+DOMAIN=monitoring-deb13-cloudinit \
+DISK_SIZE=40G \
+MEMORY_GIB=4 \
+VCPUS=2 \
+  ./infra/libvirt/create-cloudinit-vm.sh
+
+virsh -c qemu:///system net-dhcp-leases default | grep monitoring
+```
+
+### 2. Place `.env` on the monitoring VM
+
+`make deploy-monitoring` excludes `.env`, so create it once on the
+target. `ZABBIX_DB_PASSWORD` is a local database secret and must not be
+committed.
+
+```bash
+ssh deb@<monitoring-ip>
+mkdir -p ~/asterisk-lab
+cat > ~/asterisk-lab/.env <<EOF
+MONITORING_IP=<monitoring-ip>
+ZABBIX_DB_PASSWORD=<strong-local-db-password>
+ZABBIX_VERSION=7.0
+EOF
+chmod 600 ~/asterisk-lab/.env
+exit
+```
+
+### 3. Deploy and verify monitoring
+
+```bash
+make deploy-monitoring MONITORING_VM=deb@<monitoring-ip>
+ssh deb@<monitoring-ip> 'cd ~/asterisk-lab && sudo ./monitoring/verify.sh'
+```
+
+Grafana's package default login is `admin` / `admin`; rotate it on first
+login. Zabbix frontend setup is available at
+`http://<monitoring-ip>/zabbix`.
+
+### 4. Install agents on lab nodes
+
+Each monitored node needs `MONITORING_IP` in its own `.env`.
+
+```bash
+ssh deb@<asterisk-ip> 'cd ~/asterisk-lab && printf "\nMONITORING_IP=<monitoring-ip>\n" | tee -a .env'
+make deploy-agent-asterisk VM=deb@<asterisk-ip>
+ssh deb@<asterisk-ip> 'cd ~/asterisk-lab && sudo ./monitoring/verify-agent.sh'
+
+ssh deb@<sbc-ip> 'cd ~/asterisk-lab && printf "\nMONITORING_IP=<monitoring-ip>\n" | tee -a .env'
+make deploy-agent-sbc SBC_VM=deb@<sbc-ip>
+ssh deb@<sbc-ip> 'cd ~/asterisk-lab && sudo ./monitoring/verify-agent.sh'
 ```
 
 When baresip registers with `username=<ext>`, `password=$SIP_EXT_<ext>_PASSWORD`, `domain=<VM IP>`, that endpoint shifts from `Unavailable` to `Not in use`.
