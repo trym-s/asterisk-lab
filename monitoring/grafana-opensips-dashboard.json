@@ -2,10 +2,10 @@
   "uid": "opensips-sbc-overview",
   "title": "OpenSIPS SBC Overview",
   "schemaVersion": 41,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
   "timezone": "browser",
-  "tags": ["asterisk-lab", "opensips", "zabbix"],
+  "tags": ["asterisk-lab", "opensips", "rtpengine", "zabbix"],
   "time": {"from": "now-1h", "to": "now"},
   "panels": [
     {
@@ -13,9 +13,9 @@
       "type": "stat",
       "title": "OpenSIPS MI",
       "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
-      "targets": [{"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "schema": 12, "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "application": {"filter": ""}, "item": {"filter": "OpenSIPS MI available"}, "itemTag": {"filter": ""}, "macro": {"filter": ""}, "functions": [], "trigger": {"filter": ""}, "tags": {"filter": ""}, "proxy": {"filter": ""}, "textFilter": "", "resultFormat": "time_series", "options": {"showDisabledItems": false, "skipEmptyValues": false, "disableDataAlignment": false, "useZabbixValueMapping": false, "useTrends": "default", "count": false}, "table": {"skipEmptyValues": false}}],
-      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}, "type": "value"}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []},
-      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none", "justifyMode": "auto"}
+      "targets": [{"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "item": {"filter": "OpenSIPS MI available"}, "functions": [], "resultFormat": "time_series"}],
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}, "type": "value"}]}, "overrides": []},
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "colorMode": "background", "graphMode": "none"}
     },
     {
       "id": 2,
@@ -23,11 +23,29 @@
       "title": "Services",
       "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
       "targets": [
-        {"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "schema": 12, "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "application": {"filter": ""}, "item": {"filter": "OpenSIPS service active"}, "itemTag": {"filter": ""}, "macro": {"filter": ""}, "functions": [], "trigger": {"filter": ""}, "tags": {"filter": ""}, "proxy": {"filter": ""}, "textFilter": "", "resultFormat": "time_series", "options": {"showDisabledItems": false, "skipEmptyValues": false, "disableDataAlignment": false, "useZabbixValueMapping": false, "useTrends": "default", "count": false}, "table": {"skipEmptyValues": false}},
-        {"refId": "B", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "schema": 12, "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "application": {"filter": ""}, "item": {"filter": "rtpengine service active"}, "itemTag": {"filter": ""}, "macro": {"filter": ""}, "functions": [], "trigger": {"filter": ""}, "tags": {"filter": ""}, "proxy": {"filter": ""}, "textFilter": "", "resultFormat": "time_series", "options": {"showDisabledItems": false, "skipEmptyValues": false, "disableDataAlignment": false, "useZabbixValueMapping": false, "useTrends": "default", "count": false}, "table": {"skipEmptyValues": false}}
+        {"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "item": {"filter": "OpenSIPS service active"}, "functions": [], "resultFormat": "time_series"},
+        {"refId": "B", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "item": {"filter": "rtpengine service active"}, "functions": [], "resultFormat": "time_series"}
       ],
-      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}, "type": "value"}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []},
-      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none", "justifyMode": "auto"}
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}, "type": "value"}]}, "overrides": []},
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "colorMode": "background", "graphMode": "none"}
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Active RTP sessions",
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "targets": [{"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "item": {"filter": "rtpengine current sessions"}, "functions": [], "resultFormat": "time_series"}],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "colorMode": "value", "graphMode": "area"}
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "In-use SIP transactions",
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "targets": [{"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "item": {"filter": "OpenSIPS in-use transactions"}, "functions": [], "resultFormat": "time_series"}],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "colorMode": "value", "graphMode": "area"}
     },
     {
       "id": 3,
@@ -35,32 +53,58 @@
       "title": "SIP Requests",
       "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
       "targets": [
-        {"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "schema": 12, "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "application": {"filter": ""}, "item": {"filter": "/OpenSIPS .*requests/"}, "itemTag": {"filter": ""}, "macro": {"filter": ""}, "functions": [], "trigger": {"filter": ""}, "tags": {"filter": ""}, "proxy": {"filter": ""}, "textFilter": "", "resultFormat": "time_series", "options": {"showDisabledItems": false, "skipEmptyValues": false, "disableDataAlignment": false, "useZabbixValueMapping": false, "useTrends": "default", "count": false}, "table": {"skipEmptyValues": false}}
+        {"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "item": {"filter": "/OpenSIPS .*requests/"}, "functions": [], "resultFormat": "time_series"}
       ],
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
-      "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "none"}}
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
     },
     {
       "id": 4,
       "type": "timeseries",
-      "title": "Transactions",
+      "title": "Transactions by response class",
       "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
       "targets": [
-        {"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "schema": 12, "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "application": {"filter": ""}, "item": {"filter": "/OpenSIPS [245]xx transactions/"}, "itemTag": {"filter": ""}, "macro": {"filter": ""}, "functions": [], "trigger": {"filter": ""}, "tags": {"filter": ""}, "proxy": {"filter": ""}, "textFilter": "", "resultFormat": "time_series", "options": {"showDisabledItems": false, "skipEmptyValues": false, "disableDataAlignment": false, "useZabbixValueMapping": false, "useTrends": "default", "count": false}, "table": {"skipEmptyValues": false}}
+        {"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "item": {"filter": "/OpenSIPS [245]xx transactions/"}, "functions": [], "resultFormat": "time_series"}
       ],
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
-      "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "none"}}
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "rtpengine traffic",
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+      "targets": [
+        {"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "item": {"filter": "rtpengine relayed packets"}, "functions": [{"def": {"name": "delta"}, "params": []}], "resultFormat": "time_series"},
+        {"refId": "B", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "item": {"filter": "rtpengine relay errors"}, "functions": [{"def": {"name": "delta"}, "params": []}], "resultFormat": "time_series"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Call setup issues",
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+      "targets": [
+        {"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "item": {"filter": "OpenSIPS INVITE timeouts"}, "functions": [], "resultFormat": "time_series"},
+        {"refId": "B", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "item": {"filter": "rtpengine session timeouts"}, "functions": [], "resultFormat": "time_series"},
+        {"refId": "C", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "item": {"filter": "OpenSIPS bad URIs received"}, "functions": [], "resultFormat": "time_series"},
+        {"refId": "D", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "item": {"filter": "OpenSIPS bad message headers"}, "functions": [], "resultFormat": "time_series"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
     },
     {
       "id": 5,
       "type": "timeseries",
-      "title": "OpenSIPS Shared Memory",
-      "gridPos": {"x": 0, "y": 12, "w": 24, "h": 8},
+      "title": "OpenSIPS shared memory",
+      "gridPos": {"x": 0, "y": 20, "w": 24, "h": 6},
       "targets": [
-        {"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "schema": 12, "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "application": {"filter": ""}, "item": {"filter": "/OpenSIPS shared memory/"}, "itemTag": {"filter": ""}, "macro": {"filter": ""}, "functions": [], "trigger": {"filter": ""}, "tags": {"filter": ""}, "proxy": {"filter": ""}, "textFilter": "", "resultFormat": "time_series", "options": {"showDisabledItems": false, "skipEmptyValues": false, "disableDataAlignment": false, "useZabbixValueMapping": false, "useTrends": "default", "count": false}, "table": {"skipEmptyValues": false}}
+        {"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "OpenSIPS SBC"}, "item": {"filter": "/OpenSIPS shared memory/"}, "functions": [], "resultFormat": "time_series"}
       ],
       "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
-      "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "none"}}
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
     }
   ]
 }

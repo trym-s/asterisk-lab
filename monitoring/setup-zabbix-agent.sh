@@ -56,6 +56,8 @@ set_agent_conf Hostname "$ZABBIX_HOSTNAME" "$agent_conf"
 
 $SUDO install -d -m 0755 /etc/zabbix/zabbix_agent2.d
 $SUDO install -m 0755 monitoring/opensips-mi.py /usr/local/bin/opensips-mi-zabbix
+$SUDO install -m 0755 monitoring/asterisk-metrics.py /usr/local/bin/asterisk-metrics
+$SUDO install -m 0755 monitoring/rtpengine-metrics.sh /usr/local/bin/rtpengine-metrics
 # shellcheck disable=SC2016
 envsubst '${MONITORING_IP} ${ZABBIX_HOSTNAME}' \
   < monitoring/zabbix-agent-lab.conf.tmpl \
@@ -68,6 +70,21 @@ if [ -d /run/opensips ] && getent group opensips >/dev/null 2>&1; then
   $SUDO chmod 0775 /run/opensips
   echo 'd /run/opensips 0775 opensips opensips -' \
     | $SUDO tee /etc/tmpfiles.d/opensips-mi-zabbix.conf >/dev/null
+fi
+
+# Asterisk CLI needs write access to /var/run/asterisk/asterisk.ctl. The
+# simplest path that does not touch /etc/asterisk/asterisk.conf is to let the
+# zabbix user run `asterisk -rx` via sudo without a password.
+if [ -x /usr/sbin/asterisk ]; then
+  echo 'zabbix ALL=(root) NOPASSWD: /usr/sbin/asterisk -rx *' \
+    | $SUDO tee /etc/sudoers.d/zabbix-asterisk >/dev/null
+  $SUDO chmod 0440 /etc/sudoers.d/zabbix-asterisk
+fi
+
+# rtpengine-ctl needs listen-cli enabled. Add it if the SBC install didn't.
+if [ -f /etc/rtpengine/rtpengine.conf ] && ! grep -q '^listen-cli' /etc/rtpengine/rtpengine.conf; then
+  $SUDO sed -i '/^listen-ng/a listen-cli = 127.0.0.1:9900' /etc/rtpengine/rtpengine.conf
+  $SUDO systemctl restart rtpengine-daemon || true
 fi
 
 $SUDO systemctl daemon-reload

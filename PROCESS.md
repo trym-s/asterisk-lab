@@ -1614,6 +1614,149 @@ zabbix_get -s 192.168.122.3 -k 'lab.opensips.stat[rcv_requests]'
 
 Counters are OpenSIPS process counters and reset when OpenSIPS restarts.
 
+### VoIP-focused metrics added on top of the SBC baseline
+
+The initial set only covered OpenSIPS signalling counters + service status.
+That answers "is the SBC alive and are SIP packets moving" but not "how many
+concurrent calls do I have, is media flowing, is call setup failing". The
+following was added to close that gap.
+
+New files:
+
+```text
+monitoring/asterisk-metrics.py         asterisk -rx wrapper (Zabbix helper)
+monitoring/rtpengine-metrics.sh        rtpengine-ctl `list totals` parser
+monitoring/grafana-asterisk-dashboard.json  Asterisk PBX Grafana dashboard
+```
+
+Config changes:
+
+```text
+sbc/rtpengine.conf.tmpl              add listen-cli = 127.0.0.1:9900
+                                     (required by rtpengine-ctl)
+monitoring/zabbix-agent-lab.conf.tmpl add lab.rtpengine[*] and lab.asterisk[*]
+monitoring/setup-zabbix-agent.sh      install both helpers to /usr/local/bin,
+                                     write /etc/sudoers.d/zabbix-asterisk
+                                     (zabbix NOPASSWD asterisk -rx *),
+                                     patch rtpengine.conf if listen-cli missing
+monitoring/provision-observability.py register Asterisk host, add new items on
+                                     both hosts, fix item.update rejecting
+                                     hostid (drop hostid/key_ on update)
+```
+
+Second Zabbix host (Asterisk PBX):
+
+```text
+host: asterisk-deb13-cloudinit
+visible name: Asterisk PBX
+group: Asterisk Lab
+agent interface: 192.168.122.247:10050
+```
+
+Full item catalog with what each metric answers:
+
+```text
+── OpenSIPS SBC ──────────────────────────────────────────────────────────
+lab.opensips.mi.ping                          MI FIFO reachable (1/0)
+lab.opensips.stat[rcv_requests]               SIP requests received (counter)
+lab.opensips.stat[fwd_requests]               SIP requests forwarded (counter)
+lab.opensips.stat[drop_requests]              dropped by script logic (counter)
+lab.opensips.stat[err_requests]               script/route errors (counter)
+lab.opensips.stat[2xx_transactions]           successful call transactions
+lab.opensips.stat[4xx_transactions]           auth/route/user failures
+lab.opensips.stat[5xx_transactions]           server-side failures
+lab.opensips.stat[tm:inuse_transactions]      concurrent in-progress SIP tx
+                                              (rough proxy for concurrent calls)
+lab.opensips.stat[tm:UAC_transactions]        OpenSIPS-originated tx (counter)
+lab.opensips.stat[tm:UAS_transactions]        OpenSIPS-received tx (counter)
+lab.opensips.stat[tm:timeout_finalresponse_inv] INVITE timed out with no final
+                                              reply — call setup broken
+lab.opensips.stat[core:bad_URIs_rcvd]         malformed Request-URI count
+                                              (scan / attack indicator)
+lab.opensips.stat[core:bad_msg_hdr]           malformed SIP headers count
+lab.opensips.stat[used_size]                  shared memory in use (bytes)
+lab.opensips.stat[free_size]                  shared memory free (bytes)
+lab.systemd.active[opensips]                  service up (1/0)
+lab.systemd.active[rtpengine-daemon]          service up (1/0)
+lab.rtpengine[ping]                           rtpengine CLI reachable (1/0)
+lab.rtpengine[sessions_current]               active RTP sessions right now
+                                              (gauge — concurrent media calls)
+lab.rtpengine[sessions_total]                 total sessions since start (counter)
+lab.rtpengine[packets]                        cumulative relayed RTP packets
+lab.rtpengine[bytes]                          cumulative relayed RTP bytes
+lab.rtpengine[errors]                         cumulative RTP relay errors
+                                              (packet drops / forwarding fail)
+lab.rtpengine[timeouts]                       cumulative RTP-inactivity session
+                                              timeouts (one-way audio, NAT drop)
+
+── Asterisk PBX ──────────────────────────────────────────────────────────
+lab.systemd.active[asterisk]                  service up (1/0)
+lab.systemd.active[transcriber]               transcriber unit up (1/0)
+lab.asterisk[channels]                        active PJSIP channels (gauge)
+lab.asterisk[calls_active]                    active calls (gauge)
+lab.asterisk[calls_processed]                 cumulative calls since boot
+lab.asterisk[endpoints_total]                 PJSIP contacts registered
+lab.asterisk[endpoints_available]             contacts with Status=Avail —
+                                              softphones that are actually up
+lab.asterisk[recordings_count]                .wav files in the spool dir
+lab.asterisk[recordings_bytes]                total spool size in bytes
+                                              (recordings + transcripts)
+```
+
+How the two new helpers get privileged data:
+
+```text
+asterisk -rx needs write access to /var/run/asterisk/asterisk.ctl. Rather
+than editing /etc/asterisk/asterisk.conf, setup-zabbix-agent.sh installs
+    /etc/sudoers.d/zabbix-asterisk
+    zabbix ALL=(root) NOPASSWD: /usr/sbin/asterisk -rx *
+so the Zabbix UserParameter (lab.asterisk[*]) invokes
+    sudo -n /usr/sbin/asterisk -rx <command>
+and parses the result in monitoring/asterisk-metrics.py.
+
+rtpengine-ctl uses a TCP CLI. `listen-cli = 127.0.0.1:9900` was added to
+sbc/rtpengine.conf.tmpl, and setup-zabbix-agent.sh patches an existing
+/etc/rtpengine/rtpengine.conf that predates the template change.
+rtpengine-ctl -ip 127.0.0.1:9900 list totals is parsed for the metrics
+above; sessions_current comes from the "currently running sessions" block
+and packets/bytes/errors come from the last occurrence of each label in
+"Total statistics" (userspace+kernel sum).
+```
+
+Live validation examples from the monitoring VM:
+
+```bash
+zabbix_get -s 192.168.122.247 -k 'lab.asterisk[endpoints_available]'
+# 2
+
+zabbix_get -s 192.168.122.247 -k 'lab.asterisk[recordings_count]'
+# 3
+
+zabbix_get -s 192.168.122.3   -k 'lab.rtpengine[ping]'
+# 1
+
+zabbix_get -s 192.168.122.3   -k 'lab.rtpengine[sessions_current]'
+# 0   (rises to 2 during an active call — one session per SDP offer/answer)
+
+zabbix_get -s 192.168.122.3   -k 'lab.opensips.stat[tm:inuse_transactions]'
+# 0
+```
+
+Zabbix host counts after provisioning:
+
+```text
+OpenSIPS SBC   25 items
+Asterisk PBX    9 items
+```
+
+Two Zabbix API lessons from this pass:
+
+1. `item.update` rejects `hostid` — provisioner now strips `hostid` and
+   `key_` from the update payload while `item.create` keeps both.
+2. `item.get` with `filter.key_` is enough to detect an existing item on a
+   host; matching on `name` alone is unreliable because names are edited by
+   hand in the UI.
+
 ### Grafana
 
 Grafana plugin:
@@ -1629,22 +1772,35 @@ Grafana file provisioning installed:
 /etc/grafana/provisioning/datasources/zabbix.yaml
 /etc/grafana/provisioning/dashboards/asterisk-lab.yaml
 /var/lib/grafana/dashboards/asterisk-lab/opensips-sbc-overview.json
+/var/lib/grafana/dashboards/asterisk-lab/asterisk-pbx-overview.json
 ```
 
-Dashboard URL:
+Dashboard URLs:
 
 ```text
 http://192.168.122.13:3000/d/opensips-sbc-overview/opensips-sbc-overview
+http://192.168.122.13:3000/d/asterisk-pbx-overview/asterisk-pbx-overview
 ```
 
-Dashboard panels:
+opensips-sbc-overview panels:
 
 ```text
-OpenSIPS MI status
-OpenSIPS + rtpengine service status
-SIP request counters
-2xx / 4xx / 5xx transaction counters
+OpenSIPS MI status              service status (opensips + rtpengine)
+Active RTP sessions             In-use SIP transactions
+SIP request counters            transactions by response class (2xx/4xx/5xx)
+rtpengine traffic (delta pkt + errors)
+call setup issues (INVITE timeouts, RTP timeouts, bad URIs / bad headers)
 OpenSIPS shared memory used/free
+```
+
+asterisk-pbx-overview panels:
+
+```text
+Asterisk service status         Transcriber service status
+Active channels                 Registered endpoints (avail vs total)
+Concurrent channels + calls
+Calls processed (cumulative)
+Recording spool (bytes + file count)
 ```
 
 Grafana default `admin/admin` worked initially but was later no longer valid,

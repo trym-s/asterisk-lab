@@ -1,0 +1,86 @@
+{
+  "uid": "asterisk-pbx-overview",
+  "title": "Asterisk PBX Overview",
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "30s",
+  "timezone": "browser",
+  "tags": ["asterisk-lab", "asterisk", "zabbix"],
+  "time": {"from": "now-1h", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Asterisk service",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "targets": [{"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "Asterisk PBX"}, "item": {"filter": "Asterisk service active"}, "functions": [], "resultFormat": "time_series"}],
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}, "type": "value"}]}, "overrides": []},
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "colorMode": "background", "graphMode": "none"}
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Transcriber service",
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "targets": [{"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "Asterisk PBX"}, "item": {"filter": "Transcriber service active"}, "functions": [], "resultFormat": "time_series"}],
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}, "type": "value"}]}, "overrides": []},
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "colorMode": "background", "graphMode": "none"}
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Active channels",
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "targets": [{"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "Asterisk PBX"}, "item": {"filter": "Asterisk active channels"}, "functions": [], "resultFormat": "time_series"}],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "colorMode": "value", "graphMode": "area"}
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Registered endpoints",
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "targets": [
+        {"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "Asterisk PBX"}, "item": {"filter": "Asterisk PJSIP contacts available"}, "functions": [], "resultFormat": "time_series"},
+        {"refId": "B", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "Asterisk PBX"}, "item": {"filter": "Asterisk PJSIP contacts total"}, "functions": [], "resultFormat": "time_series"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "colorMode": "value", "graphMode": "area"}
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Concurrent channels + calls",
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "targets": [
+        {"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "Asterisk PBX"}, "item": {"filter": "Asterisk active channels"}, "functions": [], "resultFormat": "time_series"},
+        {"refId": "B", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "Asterisk PBX"}, "item": {"filter": "Asterisk active calls"}, "functions": [], "resultFormat": "time_series"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Calls processed (cumulative)",
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "targets": [
+        {"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "Asterisk PBX"}, "item": {"filter": "Asterisk calls processed"}, "functions": [], "resultFormat": "time_series"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Recording spool",
+      "gridPos": {"x": 0, "y": 12, "w": 24, "h": 6},
+      "targets": [
+        {"refId": "A", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "Asterisk PBX"}, "item": {"filter": "Asterisk recordings bytes"}, "functions": [], "resultFormat": "time_series"},
+        {"refId": "B", "datasource": {"type": "alexanderzobnin-zabbix-datasource", "uid": "zabbix"}, "queryType": "0", "group": {"filter": "Asterisk Lab"}, "host": {"filter": "Asterisk PBX"}, "item": {"filter": "Asterisk recordings count"}, "functions": [], "resultFormat": "time_series"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": [{"matcher": {"id": "byFrameRefID", "options": "B"}, "properties": [{"id": "unit", "value": "short"}]}]},
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+    }
+  ]
+}

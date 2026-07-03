@@ -124,6 +124,7 @@ $SUDO chmod 0640 /etc/zabbix/web/zabbix.conf.php
 
 echo "==> Zabbix lab hosts + items"
 SBC_IP="${SBC_IP:-192.168.122.3}" \
+  ASTERISK_IP="${ASTERISK_IP:-192.168.122.247}" \
   ZABBIX_USER="${ZABBIX_USER:-Admin}" \
   ZABBIX_PASSWORD="${ZABBIX_PASSWORD:-zabbix}" \
   python3 monitoring/provision-observability.py
@@ -143,6 +144,7 @@ $SUDO install -m 0644 monitoring/grafana-datasource-zabbix.yaml /etc/grafana/pro
 $SUDO install -m 0644 monitoring/grafana-dashboard-provider.yaml /etc/grafana/provisioning/dashboards/asterisk-lab.yaml
 $SUDO install -d -m 0755 -o grafana -g grafana /var/lib/grafana/dashboards/asterisk-lab
 $SUDO install -m 0644 -o grafana -g grafana monitoring/grafana-opensips-dashboard.json /var/lib/grafana/dashboards/asterisk-lab/opensips-sbc-overview.json
+$SUDO install -m 0644 -o grafana -g grafana monitoring/grafana-asterisk-dashboard.json /var/lib/grafana/dashboards/asterisk-lab/asterisk-pbx-overview.json
 
 echo "==> enable + restart services"
 $SUDO systemctl daemon-reload
