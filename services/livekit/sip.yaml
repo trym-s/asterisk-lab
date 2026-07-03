@@ -1,0 +1,28 @@
+# LiveKit SIP gateway config.
+# Runs in host network mode (see docker-compose.yml) so RTP source ports
+# survive — Asterisk needs symmetric RTP for NAT-less loopback.
+#
+# Trunk + dispatch rule are NOT declared here; those are created via
+# `lk sip inbound-trunk create` / `lk sip dispatch-rule create` in
+# install.sh after the server is up. This file only wires the daemon.
+
+api_key: ${LIVEKIT_API_KEY}
+api_secret: ${LIVEKIT_API_SECRET}
+ws_url: ws://127.0.0.1:7880
+
+redis:
+  address: 127.0.0.1:6379
+
+# SIP listener — Asterisk trunk points at 127.0.0.1:5062.
+# We move off 5060 to avoid colliding with Asterisk's own pjsip transport.
+sip_port: 5062
+
+# RTP port range for media between Asterisk and the SIP GW.
+# Distinct from Asterisk's 10000-20000 (rtp.conf) to keep tcpdump sane.
+rtp_port: 30000-30100
+
+# Loopback-only deployment: no external IP negotiation.
+use_external_ip: false
+
+logging:
+  level: info

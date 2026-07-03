@@ -6,7 +6,9 @@
 type=endpoint
 context=from-softphones
 disallow=all
-allow=ulaw,alaw
+; Wideband first (Opus/G.722 → 16 kHz+) so STT gets full-band audio.
+; Falls back to ulaw/alaw for narrowband endpoints.
+allow=opus,g722,ulaw,alaw
 auth=${SIP_EXT}
 aors=${SIP_EXT}
 direct_media=no

@@ -30,4 +30,20 @@ exten => _10XX,1,NoOp(Bridge call: ${CALLERID(num)} -> ${EXTEN})
  same => n,Dial(PJSIP/${EXTEN},20)
  same => n,Hangup()
 
+; Voicebot AI IVR — LiveKit stack. Extension 1099 forwards to the LiveKit
+; SIP gateway (127.0.0.1:5062, see services/livekit/). The gateway creates
+; a room per call and dispatches the ivr-agent worker into it.
+exten => 1099,1,NoOp(Voicebot LiveKit: ${CALLERID(num)} -> LK SIP GW)
+ same => n,Set(RECORDING_FILE=${MONITOR_DIR}/${STRFTIME(${EPOCH},,%Y%m%d-%H%M%S)}-${CALLERID(num)}-lk-${UNIQUEID}.wav)
+ same => n,MixMonitor(${RECORDING_FILE})
+ same => n,Dial(PJSIP/1099@livekit-trunk,60)
+ same => n,Hangup()
+
 exten => h,1,NoOp(Call ended. Recording file was ${RECORDING_FILE})
+
+; Outbound context for the LiveKit trunk. Kept empty on purpose: the trunk
+; never originates calls back into Asterisk in this lab. Present so
+; `pjsip show endpoint livekit-trunk` shows a valid context.
+[voicebot-outbound]
+exten => _X.,1,NoOp(voicebot-outbound: unexpected inbound ${EXTEN})
+ same => n,Hangup()

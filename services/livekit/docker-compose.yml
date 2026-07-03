@@ -1,0 +1,74 @@
+# LiveKit voicebot stack — runs on the Asterisk VM alongside Asterisk itself.
+# Everything binds to 127.0.0.1: SIP GW listens on loopback (Asterisk dials it),
+# HTTP/WS on loopback for the `lk` CLI. Agent + server + SIP share a private
+# bridge network; only the SIP GW's SIP+RTP ports need to reach the host.
+#
+# Port map (host loopback only):
+#   127.0.0.1:5062/udp   → livekit-sip SIP listener (Asterisk trunk target)
+#   127.0.0.1:30000-30100/udp → livekit-sip RTP (media to/from Asterisk)
+#   127.0.0.1:7880/tcp   → livekit-server HTTP+WS (for `lk` CLI + agent)
+#
+# Asterisk RTP range (rtp.conf) is 10000-20000. LiveKit SIP RTP is 30000-30100.
+# No overlap.
+
+name: voicebot-livekit
+
+networks:
+  lk:
+    driver: bridge
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: lk-redis
+    restart: unless-stopped
+    networks: [lk]
+    # livekit-sip runs in host network mode (to preserve RTP source ports)
+    # so it can only reach redis via host loopback. Bind on 127.0.0.1 to
+    # keep it off the external interface.
+    ports:
+      - "127.0.0.1:6379:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+
+  livekit-server:
+    image: livekit/livekit-server:latest
+    container_name: lk-server
+    restart: unless-stopped
+    networks: [lk]
+    ports:
+      - "127.0.0.1:7880:7880"
+    command: ["--config", "/etc/livekit.yaml"]
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    depends_on: [redis]
+
+  livekit-sip:
+    image: livekit/sip:latest
+    container_name: lk-sip
+    restart: unless-stopped
+    network_mode: host  # SIP RTP needs host UDP directly; range mapping via docker NAT loses source ports
+    command: ["--config", "/etc/sip.yaml"]
+    volumes:
+      - ./sip.yaml:/etc/sip.yaml:ro
+    depends_on: [livekit-server, redis]
+
+  agent:
+    build:
+      context: ./agent
+    container_name: lk-agent
+    restart: unless-stopped
+    networks: [lk]
+    environment:
+      LIVEKIT_URL: ws://lk-server:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    volumes:
+      # Shared usage log across LiveKit + Pipecat + test-caller lanes.
+      # services/common/usage.py writes here; services/common/usage_summary.py reads.
+      - /var/lib/voicebot:/var/lib/voicebot
+      # services/common Python helpers (usage.py) — bind-mounted, not built in,
+      # so a `make deploy-voicebot-livekit` after editing common/ picks it up
+      # without a rebuild.
+      - ../common:/opt/voicebot-common:ro
+    depends_on: [livekit-server]

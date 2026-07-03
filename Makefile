@@ -18,7 +18,7 @@ RSYNC_SSH ?= $(SSH)
 # rsync exclusions for both deploy paths. .env is intentionally excluded so
 # the lab .env on each VM (with SIP passwords / SBC_IP / ASTERISK_IP) is not
 # overwritten by a host-side .env. Place .env manually on each target VM.
-RSYNC_EXCLUDES := --exclude='.git/' --exclude='.env' --exclude='NOTES.md' --exclude='__pycache__/'
+RSYNC_EXCLUDES := --exclude='.git/' --exclude='.env' --exclude='NOTES.md' --exclude='__pycache__/' --exclude='.rendered/'
 
 help: ## Show this help
 	@awk 'BEGIN{FS=":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -82,6 +82,24 @@ deploy-agent-asterisk: ## rsync repo to $(VM), then install zabbix-agent2 there
 deploy-agent-sbc: ## rsync repo to $(SBC_VM), then install zabbix-agent2 there
 	$(RSYNC) -e "$(RSYNC_SSH)" -av --delete $(RSYNC_EXCLUDES) ./ $(SBC_VM):~/asterisk-lab/
 	$(SSH) $(SBC_VM) 'cd ~/asterisk-lab && sudo ./monitoring/setup-zabbix-agent.sh'
+
+# ---- Voicebot stacks (LiveKit / Pipecat) — run on the Asterisk VM --------
+
+install-voicebot-livekit: ## Provision the LiveKit voicebot stack on this host
+	sudo -E ./services/livekit/install.sh
+
+deploy-voicebot-livekit: ## rsync repo to $(VM), then provision LiveKit stack there
+	$(RSYNC) -e "$(RSYNC_SSH)" -av --delete $(RSYNC_EXCLUDES) ./ $(VM):~/asterisk-lab/
+	$(SSH) $(VM) 'cd ~/asterisk-lab && sudo -E ./services/livekit/install.sh'
+
+logs-voicebot-livekit: ## Tail LiveKit stack container logs on $(VM)
+	$(SSH) $(VM) 'sudo docker logs -f --tail=100 lk-agent lk-sip lk-server 2>&1'
+
+gen-utterances: ## Generate test-caller WAVs via ElevenLabs (uses host .env)
+	./services/test-caller/gen-utterances.sh
+
+usage-summary: ## Print API spend summary from /var/lib/voicebot/usage.jsonl on $(VM)
+	$(SSH) $(VM) 'python3 ~/asterisk-lab/services/common/usage_summary.py $(ARGS)'
 
 # ---- shared ---------------------------------------------------------------
 

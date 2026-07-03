@@ -7,6 +7,10 @@ __pycache__/
 recordings/
 transcripts/
 
+# services/*/install.sh renders templated configs (envsubst) into a per-host
+# .rendered/ that must not travel via rsync or git.
+services/*/.rendered/
+
 # Personal living notes for the author — not for the repo's audience.
 NOTES.md
 
