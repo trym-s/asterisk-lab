@@ -95,6 +95,16 @@ deploy-voicebot-livekit: ## rsync repo to $(VM), then provision LiveKit stack th
 logs-voicebot-livekit: ## Tail LiveKit stack container logs on $(VM)
 	$(SSH) $(VM) 'sudo docker logs -f --tail=100 lk-agent lk-sip lk-server 2>&1'
 
+install-voicebot-pipecat: ## Provision the Pipecat voicebot stack on this host
+	sudo -E ./services/pipecat/install.sh
+
+deploy-voicebot-pipecat: ## rsync repo to $(VM), then provision Pipecat stack there
+	$(RSYNC) -e "$(RSYNC_SSH)" -av --delete $(RSYNC_EXCLUDES) ./ $(VM):~/asterisk-lab/
+	$(SSH) $(VM) 'cd ~/asterisk-lab && sudo -E ./services/pipecat/install.sh'
+
+logs-voicebot-pipecat: ## Tail Pipecat agent logs on $(VM)
+	$(SSH) $(VM) 'sudo docker logs -f --tail=100 pc-agent 2>&1'
+
 gen-utterances: ## Generate test-caller WAVs via ElevenLabs (uses host .env)
 	./services/test-caller/gen-utterances.sh
 

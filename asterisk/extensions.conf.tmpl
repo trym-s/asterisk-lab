@@ -30,6 +30,22 @@ exten => _10XX,1,NoOp(Bridge call: ${CALLERID(num)} -> ${EXTEN})
  same => n,Dial(PJSIP/${EXTEN},20)
  same => n,Hangup()
 
+; Voicebot AI — Pipecat lane. Extension 1098 routes to the Pipecat agent
+; container listening on 127.0.0.1:8090 via app_audiosocket (raw TCP,
+; slin16 @ 8 kHz, 20 ms ptime). See services/pipecat/. The UUID passed to
+; AudioSocket() becomes the call handle in the agent's logs.
+exten => 1098,1,NoOp(Voicebot Pipecat: ${CALLERID(num)} -> AudioSocket)
+ same => n,Set(RECORDING_FILE=${MONITOR_DIR}/${STRFTIME(${EPOCH},,%Y%m%d-%H%M%S)}-${CALLERID(num)}-pc-${UNIQUEID}.wav)
+ same => n,Answer()
+ same => n,MixMonitor(${RECORDING_FILE})
+ ; app_audiosocket requires a standards-compliant UUID (8-4-4-4-12 hex).
+ ; ${UNIQUEID} is Asterisk-internal "epoch.channel", which fails the parse.
+ ; MD5 gives 32 hex chars; we substring it into the canonical UUID shape.
+ same => n,Set(H=${MD5(${UNIQUEID})})
+ same => n,Set(AS_UUID=${H:0:8}-${H:8:4}-${H:12:4}-${H:16:4}-${H:20:12})
+ same => n,AudioSocket(${AS_UUID},127.0.0.1:8090)
+ same => n,Hangup()
+
 ; Voicebot AI IVR — LiveKit stack. Extension 1099 forwards to the LiveKit
 ; SIP gateway (127.0.0.1:5062, see services/livekit/). The gateway creates
 ; a room per call and dispatches the ivr-agent worker into it.

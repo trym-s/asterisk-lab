@@ -1,0 +1,177 @@
+"""Asterisk AudioSocket protocol I/O for the Pipecat lane.
+
+Protocol (per app_audiosocket.c):
+  Each message = 1-byte type + 2-byte big-endian length + <length> bytes payload.
+
+  Types we handle:
+    0x00  hangup      (Asterisk closing; payload is 0 bytes)
+    0x01  uuid        (16-byte call UUID sent first on connect)
+    0x02  DTMF        (1-byte digit)
+    0x10  slin16 PCM  (mono, 8 kHz, 16-bit LE — despite the name "slin16"
+                        which is Asterisk-speak for signed-linear 16-bit,
+                        NOT 16 kHz. Wideband would need slin.wav mode.)
+    0xFF  error       (server → client, terminates call)
+
+  Asterisk connects TO us (dialplan: AudioSocket(<uuid>,<host>:<port>)),
+  so we're a TCP server. Ptime is 20 ms → 320 bytes payload per audio frame
+  at 8 kHz mono s16le (8000 * 0.02 * 2 = 320).
+
+We expose an asyncio protocol handler that produces (uuid, inbound_queue,
+outbound_queue) triples. The Pipecat pipeline consumes from `inbound_queue`
+and writes to `outbound_queue`; this module owns the socket framing.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import struct
+from typing import Callable, Awaitable
+
+logger = logging.getLogger("audiosocket")
+
+TYPE_HANGUP = 0x00
+TYPE_UUID = 0x01
+TYPE_DTMF = 0x02
+TYPE_AUDIO = 0x10
+TYPE_ERROR = 0xFF
+
+# 8 kHz slin16 mono, 20 ms frames.
+SAMPLE_RATE = 8000
+FRAME_MS = 20
+FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS // 1000  # 160
+FRAME_BYTES = FRAME_SAMPLES * 2  # 320
+
+
+async def _read_msg(reader: asyncio.StreamReader) -> tuple[int, bytes] | None:
+    """Read one framed message. Return (type, payload) or None on EOF."""
+    hdr = await reader.readexactly(3) if False else b""
+    try:
+        hdr = await reader.readexactly(3)
+    except asyncio.IncompleteReadError:
+        return None
+    msg_type = hdr[0]
+    length = struct.unpack(">H", hdr[1:3])[0]
+    payload = await reader.readexactly(length) if length else b""
+    return msg_type, payload
+
+
+def _pack_audio(pcm: bytes) -> bytes:
+    """Frame a slin16 payload for Asterisk. Payload must be <= 65535 bytes."""
+    return bytes([TYPE_AUDIO]) + struct.pack(">H", len(pcm)) + pcm
+
+
+def _pack_hangup() -> bytes:
+    return bytes([TYPE_HANGUP]) + b"\x00\x00"
+
+
+class AudioSocketSession:
+    """One inbound Asterisk call. Owned by AudioSocketServer.handle_conn."""
+
+    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        self.reader = reader
+        self.writer = writer
+        self.uuid: str = ""
+        self.inbound: asyncio.Queue[bytes] = asyncio.Queue(maxsize=200)
+        self.outbound: asyncio.Queue[bytes] = asyncio.Queue(maxsize=200)
+        self._closed = asyncio.Event()
+
+    async def _reader_loop(self) -> None:
+        """Pull frames from Asterisk, drop into inbound queue."""
+        try:
+            while not self._closed.is_set():
+                msg = await _read_msg(self.reader)
+                if msg is None:
+                    logger.info("audiosocket: peer EOF uuid=%s", self.uuid)
+                    break
+                msg_type, payload = msg
+                if msg_type == TYPE_UUID:
+                    self.uuid = payload.hex()
+                    logger.info("audiosocket: uuid=%s", self.uuid)
+                elif msg_type == TYPE_AUDIO:
+                    try:
+                        self.inbound.put_nowait(payload)
+                    except asyncio.QueueFull:
+                        # Drop-oldest to keep RT: pop then push.
+                        _ = self.inbound.get_nowait()
+                        self.inbound.put_nowait(payload)
+                elif msg_type == TYPE_HANGUP:
+                    logger.info("audiosocket: hangup uuid=%s", self.uuid)
+                    break
+                elif msg_type == TYPE_DTMF:
+                    logger.info("audiosocket: dtmf=%r uuid=%s", payload, self.uuid)
+                else:
+                    logger.debug("audiosocket: unknown type=%#x uuid=%s", msg_type, self.uuid)
+        except Exception:  # noqa: BLE001
+            logger.exception("audiosocket reader crashed uuid=%s", self.uuid)
+        finally:
+            self._closed.set()
+            # Signal EOF to pipeline consumers.
+            try:
+                self.inbound.put_nowait(b"")
+            except asyncio.QueueFull:
+                pass
+
+    async def _writer_loop(self) -> None:
+        """Pull PCM frames from outbound queue, frame + send to Asterisk."""
+        try:
+            while not self._closed.is_set():
+                pcm = await self.outbound.get()
+                if not pcm:
+                    break
+                # Frame in ptime-sized chunks so we honor 20 ms cadence.
+                for i in range(0, len(pcm), FRAME_BYTES):
+                    chunk = pcm[i:i + FRAME_BYTES]
+                    self.writer.write(_pack_audio(chunk))
+                await self.writer.drain()
+        except Exception:  # noqa: BLE001
+            logger.exception("audiosocket writer crashed uuid=%s", self.uuid)
+        finally:
+            self._closed.set()
+
+    async def close(self) -> None:
+        self._closed.set()
+        try:
+            self.writer.write(_pack_hangup())
+            await self.writer.drain()
+        except Exception:  # noqa: BLE001
+            pass
+        self.writer.close()
+        try:
+            await self.writer.wait_closed()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+class AudioSocketServer:
+    """TCP server that accepts Asterisk AudioSocket connections."""
+
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        on_session: Callable[[AudioSocketSession], Awaitable[None]],
+    ):
+        self.host = host
+        self.port = port
+        self.on_session = on_session
+
+    async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        session = AudioSocketSession(reader, writer)
+        r_task = asyncio.create_task(session._reader_loop(), name="as-reader")
+        w_task = asyncio.create_task(session._writer_loop(), name="as-writer")
+        try:
+            await self.on_session(session)
+        except Exception:  # noqa: BLE001
+            logger.exception("session handler crashed uuid=%s", session.uuid)
+        finally:
+            await session.close()
+            for t in (r_task, w_task):
+                if not t.done():
+                    t.cancel()
+
+    async def serve_forever(self) -> None:
+        server = await asyncio.start_server(self._handle, self.host, self.port)
+        logger.info("audiosocket: listening on %s:%d", self.host, self.port)
+        async with server:
+            await server.serve_forever()

@@ -1,5 +1,19 @@
 # Agent Notes
 
+## Spec-Driven Entry Point
+
+This repo is moving to a spec-driven operating model. Before changing code,
+deploy scripts, templates, runbooks, or agent guidance, read:
+
+1. `specs/README.md` for the spec map and source-of-truth rules.
+2. `specs/global/agent-routing.md` to choose the relevant domain.
+3. The matching `specs/domains/<domain>/spec.md`, `runbook.md`,
+   `decisions.md`, and `contracts/VAL-*.md` files.
+
+`README.md`, `PROCESS.md`, and `NOTES.md` are not acceptance sources. They may
+explain onboarding, current state, or rationale, but the specs and contracts
+define supported behavior and required evidence.
+
 This repo is a reproducible three-VM lab for Debian 13 / Ubuntu 26.04:
 **Asterisk 22 LTS PBX**, an **OpenSIPS 3.6 LTS SBC** with rtpengine, and a
 **monitoring VM** with Zabbix 7.0 LTS + PostgreSQL and Grafana.

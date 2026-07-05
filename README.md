@@ -2,6 +2,10 @@
 
 End-to-end Asterisk 22 LTS setup on Debian/Ubuntu: source build, PJSIP softphone registration with baresip, sngrep capture, call recording, transcription.
 
+Spec-driven source of truth lives under `specs/`. Start with
+`specs/README.md` for the domain map and `specs/global/agent-routing.md` for
+agent routing. This README is onboarding material, not the acceptance contract.
+
 The deliverable is a repo you can clone onto a fresh Debian 13 / Ubuntu 26.04 box and bring up to a working Asterisk PBX with one command.
 
 An optional second VM adds an **OpenSIPS 3.6 LTS SBC** with rtpengine so both SIP signaling and RTP media travel host softphone ⇄ SBC ⇄ Asterisk. A third VM can run **Zabbix 7.0 LTS + Grafana** for lab monitoring. The SBC and monitoring layers are described in their own sections below; Asterisk-only operation is unchanged.
