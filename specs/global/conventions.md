@@ -21,6 +21,9 @@
 - Put procedure in runbooks.
 - Put rationale in decisions.
 - Do not duplicate acceptance criteria into README or PROCESS.
+- Keep specs, agent guidance, CI metadata, and repo documentation out of VM
+  deploy payloads. VMs are runtime targets, not documentation or planning
+  stores.
 
 ## Agent Discipline
 
