@@ -44,7 +44,7 @@ send_cmd() {
 }
 
 # ---- preflight ------------------------------------------------------
-if ! (echo >/dev/tcp/$CTRL_HOST/$CTRL_PORT) 2>/dev/null; then
+if ! (echo >/dev/tcp/"$CTRL_HOST"/"$CTRL_PORT") 2>/dev/null; then
   echo "ERROR: baresip ctrl_tcp not reachable at $CTRL_HOST:$CTRL_PORT"
   echo "Fix: add 'module ctrl_tcp.so' to ~/.baresip/config and restart baresip"
   exit 1
@@ -60,7 +60,7 @@ SILENCE="$HERE/audio/00-silence.wav"
 
 shopt -s nullglob
 # Skip the silence primer when iterating utterances.
-wavs=( $(ls "$HERE"/audio/*.wav 2>/dev/null | grep -v '00-silence.wav') )
+mapfile -t wavs < <(find "$HERE/audio" -maxdepth 1 -type f -name '*.wav' ! -name '00-silence.wav' | sort)
 [ ${#wavs[@]} -gt 0 ] || { echo "no WAVs under $HERE/audio/"; exit 1; }
 
 echo "==> target ext: $TARGET  |  utterances: ${#wavs[@]}  |  log dir: $LOG_DIR"
@@ -112,7 +112,7 @@ python3 "$REPO_ROOT/services/common/usage_summary.py" \
 echo
 echo "==> remote usage delta (LiveKit / Pipecat agent lanes)"
 ssh deb@192.168.122.247 \
-  "python3 ~/asterisk-lab/services/common/usage_summary.py --since 5m" 2>&1 || \
+  "python3 /opt/asterisk-lab/current/services/common/usage_summary.py --since 5m" 2>&1 || \
   echo "  (couldn't reach VM — run manually: make usage-summary)"
 
 echo

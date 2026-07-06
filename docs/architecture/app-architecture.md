@@ -12,7 +12,8 @@ VM is authoritative.
   runs `virsh` / `virt-install` under libvirt to provision VMs, and holds
   the operator-facing Makefile. Host bootstrap lives in
   `infra/libvirt/setup-host.sh`; cloud-init VM creation in
-  `infra/libvirt/create-cloudinit-vm.sh`.
+  `infra/libvirt/create-cloudinit-vm.sh`. Deploy targets rsync role payloads
+  to `/opt/asterisk-lab/current` on the VMs.
 - **Asterisk VM (`VM` in the Makefile).** Runs Asterisk 22 LTS built from
   source by `install.sh`. Templates under `asterisk/*.tmpl` render to
   `/etc/asterisk/{pjsip.conf, pjsip.d/<ext>.conf, extensions.conf, rtp.conf}`.
@@ -47,14 +48,18 @@ VM is authoritative.
 - Template files under `asterisk/`, `sbc/`, and `monitoring/` are sources;
   their rendered outputs on the VMs are not. Re-running the matching
   installer overwrites the rendered file.
-- Secrets are per-VM. `.env` is never rsynced by any `make deploy` target
-  and never checked into git; only `.env.example` is tracked.
+- Secrets are per-VM. VM secrets live in `/etc/asterisk-lab/env`. `.env` is
+  never rsynced by any `make deploy` target and never checked into git; only
+  `.env.example` is tracked. Local host workflows may still use ignored
+  repo-local `.env` files.
+- `/opt/asterisk-lab/current` on each VM is disposable deploy payload, not a
+  git repository or acceptance source.
 - The SBC is a stateless proxy, not a topology-hiding B2BUA. Signaling
   and media both pass through it, but session state does not live there.
 - Voicebot lanes are comparison surfaces on the Asterisk VM. Each lane
   isolates its containers under Docker; they never edit each other's
   state, and both consume shared credentials (`OPENAI_API_KEY`,
-  `ELEVENLABS_API_KEY`) from the Asterisk VM's `.env`.
+  `ELEVENLABS_API_KEY`) from the Asterisk VM lab env.
 - Real IPs are DHCP-allocated by the libvirt default network. Read them
   from `virsh net-dhcp-leases default` after boot; no config file may
   hardcode a last-seen IP.
@@ -102,5 +107,5 @@ VM is authoritative.
 - The SBC does not do topology-hiding B2BUA today; it is a stateless
   proxy that inserts Record-Route/Path headers and delegates media to
   rtpengine.
-- Voicebot lanes are stable only when their VAL-VOICEBOT-* contracts
-  hold. Adding a new voicebot backend requires new VAL-* contracts.
+- Voicebot lanes are stable only when parity is proven with fresh runtime
+  evidence. Adding a new voicebot backend requires explicit validation.

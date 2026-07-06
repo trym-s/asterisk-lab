@@ -6,7 +6,7 @@
 > When the governing spec is complete, archive this file under `docs/archive/plan/`.
 > The next spec starts with a fresh root `PLANS.md` from `docs/templates/PLANS.md`.
 
-**Status:** Active - specs decommission and directory update in progress.
+**Status:** Active - /opt deploy layout migration in progress.
 **Governing spec:** `docs/specs/spec01-adopt-agent-harness.md`
 **Last updated:** 2026-07-06
 
@@ -32,9 +32,12 @@
       single spec surface. Updated DEC-002 entry.
 - [x] Update references to `specs/` to `docs/specs/` across repository files.
 - [x] Update Makefile default VM IP to point to the active Asterisk VM (192.168.122.247).
-- [ ] Follow-up: extract more DEC-* entries from git history (LiveKit
-      wideband trial, Pipecat AudioSocket lane, monitoring provisioning
-      quirks). Tracked as scope inside spec01.
+- [x] Remove stale migrated domain/global specs from `docs/specs/`.
+- [x] Move VM deploy payloads from `~/asterisk-lab` to
+      `/opt/asterisk-lab/current`.
+- [x] Move VM runtime env source to `/etc/asterisk-lab/env` with repo
+      `.env` retained as a host-local fallback.
+- [ ] Deploy the new payload layout to all live VMs and run verify targets.
 
 ## Blockers
 
@@ -47,10 +50,18 @@
   governance and operational baselines.
 - `docs/architecture/app-architecture.md` describes the current
   three-VM plus voicebot layout.
-- `docs/specs/` is the single spec surface, with domain contracts migrated under `docs/specs/domains/` and `docs/specs/global/`.
+- `docs/specs/` is the single spec surface; stale migrated
+  `docs/specs/domains/` and `docs/specs/global/` content was removed.
+- `docs/memory/decisions.md` DEC-007 records `/opt/asterisk-lab/current`
+  payloads and `/etc/asterisk-lab/env` secrets.
 
 ## Recent updates
 
+- 2026-07-06 - Started deploy layout migration: role payloads now target
+  `/opt/asterisk-lab/current`, VM env loads from `/etc/asterisk-lab/env`,
+  and `deploy/rsync/*.filter` keeps docs/harness/secrets out of VM payloads.
+- 2026-07-06 - Removed stale migrated domain/global specs under `docs/specs/`;
+  current specs are `specNN` files plus paired prompts.
 - 2026-07-06 - Added simplified VM management (virsh) targets (`vms`, `ips`, `up`, `down`, `up-sbc`, `down-sbc`, `up-mon`, `down-mon`) to the `Makefile`.
 - 2026-07-06 - Migrated all domain specs, contracts, decisions, and runbooks under `docs/specs/` (placed into `docs/specs/domains/`, `docs/specs/global/`, and `docs/specs/changes/`). Fixed path references in domains README, conventions, agent-routing, and validation model. Updated Makefile default VM IP.
 - 2026-07-06 - Harness initialized from agent-workflow-template. AGENTS.md

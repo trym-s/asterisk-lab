@@ -101,7 +101,7 @@ The generated VM uses independent libvirt volumes:
 /var/lib/libvirt/images/<DOMAIN>-seed.iso
 ```
 
-The seed ISO contains only host/user bootstrap data: hostname, username, sudo rule, and your SSH public key. It does not contain SIP passwords; those still belong in the target VM's `.env`.
+The seed ISO contains only host/user bootstrap data: hostname, username, sudo rule, and your SSH public key. It does not contain SIP passwords; those still belong in the target VM's `/etc/asterisk-lab/env`.
 
 ### Option B: manual qcow2 VM
 
@@ -214,7 +214,7 @@ virsh -c qemu:///system net-dhcp-leases default | grep opensips-sbc
 # e.g. 192.168.122.3   opensips-sbc-deb13-cloudinit
 ```
 
-### 2. Place `.env` on the SBC VM
+### 2. Place the lab env on the SBC VM
 
 The SBC needs to know its own IP (used in `socket=` and therefore in
 `Via` / `Record-Route` / `Path` headers) and the Asterisk VM's IP (the
@@ -222,10 +222,12 @@ relay target). Both come from `virsh net-dhcp-leases default`.
 
 ```bash
 ssh deb@<sbc-ip>
-cat > ~/asterisk-lab/.env <<EOF
+sudo install -d -m 0755 /etc/asterisk-lab
+sudo tee /etc/asterisk-lab/env >/dev/null <<EOF
 SBC_IP=<sbc-ip>
 ASTERISK_IP=<asterisk-ip>
 EOF
+sudo chmod 600 /etc/asterisk-lab/env
 ```
 
 ### 3. Deploy and verify
@@ -234,10 +236,10 @@ From the host:
 
 ```bash
 make deploy-sbc SBC_VM=deb@<sbc-ip>
-ssh deb@<sbc-ip> 'cd ~/asterisk-lab && sudo ./sbc/verify.sh'
+ssh deb@<sbc-ip> 'cd /opt/asterisk-lab/current && sudo ./sbc/verify.sh'
 ```
 
-`deploy-sbc` rsyncs the repo and runs `sbc/install.sh` on the SBC VM —
+`deploy-sbc` rsyncs the SBC payload to `/opt/asterisk-lab/current` and runs `sbc/install.sh` on the SBC VM —
 idempotent: re-run any time after editing `sbc/opensips.cfg.tmpl` or
 `sbc/rtpengine.conf.tmpl`. `make verify-sbc` is the same `sbc/verify.sh`
 but executed locally on the SBC VM (mirrors `make verify` on the
@@ -313,7 +315,7 @@ while audio is working, RTP is bypassing the SBC — typical cause is
 
 ```bash
 make verify                                     # asterisk lab: 10+ checks; exits non-zero on first failure
-ssh deb@<sbc-ip> 'cd ~/asterisk-lab && sudo ./sbc/verify.sh'   # (optional) SBC lab: 11 checks
+ssh deb@<sbc-ip> 'cd /opt/asterisk-lab/current && sudo ./sbc/verify.sh'   # (optional) SBC lab: 11 checks
 ```
 
 `make verify` and `make verify-sbc` both run the smoke-check script locally on whichever host invokes them — they mirror the asymmetry that `make install` already has. To verify a remote VM, SSH in and run `make verify[-sbc]` from there, or call the script over SSH as shown.
@@ -366,21 +368,21 @@ VCPUS=2 \
 virsh -c qemu:///system net-dhcp-leases default | grep monitoring
 ```
 
-### 2. Place `.env` on the monitoring VM
+### 2. Place the lab env on the monitoring VM
 
-`make deploy-monitoring` excludes `.env`, so create it once on the
-target. `ZABBIX_DB_PASSWORD` is a local database secret and must not be
-committed.
+`make deploy-monitoring` excludes env files, so create
+`/etc/asterisk-lab/env` once on the target. `ZABBIX_DB_PASSWORD` is a local
+database secret and must not be committed.
 
 ```bash
 ssh deb@<monitoring-ip>
-mkdir -p ~/asterisk-lab
-cat > ~/asterisk-lab/.env <<EOF
+sudo install -d -m 0755 /etc/asterisk-lab
+sudo tee /etc/asterisk-lab/env >/dev/null <<EOF
 MONITORING_IP=<monitoring-ip>
 ZABBIX_DB_PASSWORD=<strong-local-db-password>
 ZABBIX_VERSION=7.0
 EOF
-chmod 600 ~/asterisk-lab/.env
+sudo chmod 600 /etc/asterisk-lab/env
 exit
 ```
 
@@ -388,7 +390,7 @@ exit
 
 ```bash
 make deploy-monitoring MONITORING_VM=deb@<monitoring-ip>
-ssh deb@<monitoring-ip> 'cd ~/asterisk-lab && sudo ./monitoring/verify.sh'
+ssh deb@<monitoring-ip> 'cd /opt/asterisk-lab/current && sudo ./monitoring/verify.sh'
 ```
 
 Grafana's package default login is `admin` / `admin`; rotate it on first
@@ -397,16 +399,16 @@ login. Zabbix frontend setup is available at
 
 ### 4. Install agents on lab nodes
 
-Each monitored node needs `MONITORING_IP` in its own `.env`.
+Each monitored node needs `MONITORING_IP` in `/etc/asterisk-lab/env`.
 
 ```bash
-ssh deb@<asterisk-ip> 'cd ~/asterisk-lab && printf "\nMONITORING_IP=<monitoring-ip>\n" | tee -a .env'
+ssh deb@<asterisk-ip> 'printf "\nMONITORING_IP=<monitoring-ip>\n" | sudo tee -a /etc/asterisk-lab/env'
 make deploy-agent-asterisk VM=deb@<asterisk-ip>
-ssh deb@<asterisk-ip> 'cd ~/asterisk-lab && sudo ./monitoring/verify-agent.sh'
+ssh deb@<asterisk-ip> 'cd /opt/asterisk-lab/current && sudo ./monitoring/verify-agent.sh'
 
-ssh deb@<sbc-ip> 'cd ~/asterisk-lab && printf "\nMONITORING_IP=<monitoring-ip>\n" | tee -a .env'
+ssh deb@<sbc-ip> 'printf "\nMONITORING_IP=<monitoring-ip>\n" | sudo tee -a /etc/asterisk-lab/env'
 make deploy-agent-sbc SBC_VM=deb@<sbc-ip>
-ssh deb@<sbc-ip> 'cd ~/asterisk-lab && sudo ./monitoring/verify-agent.sh'
+ssh deb@<sbc-ip> 'cd /opt/asterisk-lab/current && sudo ./monitoring/verify-agent.sh'
 ```
 
 When baresip registers with `username=<ext>`, `password=$SIP_EXT_<ext>_PASSWORD`, `domain=<VM IP>`, that endpoint shifts from `Unavailable` to `Not in use`.
@@ -565,11 +567,11 @@ sudo ./scripts/setup-transcriber.sh
 
 **`verify.sh` and `pipefail`.** Avoid piping `pip show ...` into `head -1` under `set -o pipefail` — `head` closes the pipe early, `pip` gets `SIGPIPE` and exits 141, and the check reports `FAIL` even though pip succeeded. Same trap with any short-circuiting downstream (`head`, `grep -q`, `awk 'NR==1'`). The current `verify.sh` avoids the pattern; preserve that on extension.
 
-**`make deploy` excludes `.env` on purpose.** Secrets stay placed manually on the target (`scp .env vm:~/asterisk-lab/.env`, or production-grade `systemd-creds`/vault). A pipeline that rsyncs a real `.env` into a VM is a leak surface — any audit would flag it.
+**`make deploy` excludes env files on purpose.** Secrets stay placed manually on the target at `/etc/asterisk-lab/env` (or through production-grade `systemd-creds`/vault). A pipeline that rsyncs a real `.env` into a VM is a leak surface and any audit would flag it.
 
 ## Agent context
 
-This repo includes `AGENTS.md` so future agent runs keep the same lab assumptions: templates under `asterisk/*.tmpl` and `sbc/*.tmpl` are the sources of truth, secrets and per-VM config (`SBC_IP`, `ASTERISK_IP`, SIP passwords) stay in `.env`, the Linux softphone is baresip, endpoints live in `SIP_EXTENSIONS`, and extension `600` records WAV files under `/var/spool/asterisk/monitor/`.
+This repo includes `AGENTS.md` so future agent runs keep the same lab assumptions: templates under `asterisk/*.tmpl` and `sbc/*.tmpl` are the sources of truth, secrets and per-VM config (`SBC_IP`, `ASTERISK_IP`, SIP passwords) stay in `/etc/asterisk-lab/env`, the Linux softphone is baresip, endpoints live in `SIP_EXTENSIONS`, and extension `600` records WAV files under `/var/spool/asterisk/monitor/`.
 
 Project-level skills under `.claude/skills/` document the most common ops flows — adding/removing a SIP endpoint, deploying to the lab VM, debugging registration failures, rotating passwords. Read the matching skill before acting on those tasks.
 

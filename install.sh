@@ -9,13 +9,14 @@ cd "$REPO_ROOT"
 
 # ---- env ------------------------------------------------------------
 # shellcheck source=/dev/null
-[ -f .env ] && { set -a; . .env; set +a; }
-: "${SIP_EXTENSIONS:?SIP_EXTENSIONS not set; cp .env.example .env and fill it in}"
+. "$REPO_ROOT/scripts/lib/env.sh"
+load_lab_env "$REPO_ROOT"
+: "${SIP_EXTENSIONS:?SIP_EXTENSIONS not set; create /etc/asterisk-lab/env or repo .env and fill it in}"
 : "${ASTERISK_VERSION:=22.9.0}"
 : "${MAKE_JOBS:=$(nproc)}"
 for ext in $SIP_EXTENSIONS; do
   pw_var="SIP_EXT_${ext}_PASSWORD"
-  : "${!pw_var:?$pw_var not set; add it to .env}"
+  : "${!pw_var:?$pw_var not set; add it to the lab env file}"
 done
 
 SUDO=$([ "$(id -u)" -eq 0 ] && echo "" || echo "sudo")
@@ -86,7 +87,7 @@ for ext in $SIP_EXTENSIONS; do
 done
 
 # Drop orphaned endpoint files (in /etc but not in SIP_EXTENSIONS) so
-# removing a number from .env actually removes the endpoint on re-run.
+# removing a number from the lab env file removes the endpoint on re-run.
 shopt -s nullglob
 for f in /etc/asterisk/pjsip.d/*.conf; do
   ext=$(basename "$f" .conf)

@@ -7,8 +7,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 # shellcheck source=/dev/null
-[ -f .env ] && { set -a; . .env; set +a; }
-: "${ZABBIX_DB_PASSWORD:?ZABBIX_DB_PASSWORD not set; add it to the monitoring VM .env}"
+. "$REPO_ROOT/scripts/lib/env.sh"
+load_lab_env "$REPO_ROOT"
+: "${ZABBIX_DB_PASSWORD:?ZABBIX_DB_PASSWORD not set; add it to the monitoring VM lab env file}"
 : "${MONITORING_IP:=$(hostname -I | awk '{print $1}')}"
 : "${ZABBIX_VERSION:=7.0}"
 

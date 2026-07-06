@@ -8,7 +8,7 @@ This file is a current-state index, not an acceptance contract.
 
 ## Current Target
 
-From a clone of this repo:
+From a clone of this repo, or from `/opt/asterisk-lab/current` on a VM:
 
 ```bash
 cp .env.example .env
@@ -16,6 +16,10 @@ $EDITOR .env
 make install
 make verify
 ```
+
+On VMs, prefer `/etc/asterisk-lab/env` over repo-local `.env`. The scripts
+load `/etc/asterisk-lab/env` first and fall back to `.env` for host-local
+development.
 
 `make install` runs:
 
@@ -60,6 +64,8 @@ infra/libvirt/
 Target VM paths produced by install:
 
 ```text
+/opt/asterisk-lab/current/                 Disposable rsync deploy payload
+/etc/asterisk-lab/env                      Per-VM secret and host config
 /usr/local/src/asterisk/                 Asterisk source checkout
 /usr/sbin/asterisk                       Installed Asterisk binary
 /etc/systemd/system/asterisk.service     Asterisk service unit
@@ -76,7 +82,8 @@ Target VM paths produced by install:
 Secrets:
 
 ```text
-.env                         Local/target secret file, ignored by git
+/etc/asterisk-lab/env        Target VM secret file, never rsynced
+.env                         Host-local fallback secret file, ignored by git
 .env.example                 Committed template, names only
 SIP_EXT_<num>_PASSWORD       One password per SIP extension
 ```
@@ -436,7 +443,9 @@ SBC_IP=
 ASTERISK_IP=
 ```
 
-Both are learned from libvirt DHCP after first boot; update `.env` when the lease changes and re-run `make deploy-sbc`.
+Both are learned from libvirt DHCP after first boot; update
+`/etc/asterisk-lab/env` on the SBC when the lease changes and re-run
+`make deploy-sbc`.
 
 Makefile targets:
 
@@ -444,7 +453,7 @@ Makefile targets:
 make install-sbc        ssh to SBC VM, run sbc/install.sh
 make verify-sbc         ssh to SBC VM, run sbc/verify.sh
 make logs-sbc           ssh to SBC VM, tail -f /var/log/syslog
-make deploy-sbc         rsync repo to SBC VM
+make deploy-sbc         rsync SBC payload to /opt/asterisk-lab/current
 ```
 
 `make install` / `make verify` / `make deploy` remain Asterisk-only.
@@ -490,7 +499,7 @@ Recording paths on the Asterisk VM are unchanged — the SBC is transparent to t
 libvirt's `default` network gives leases from the DHCP pool without persistent reservation. After a VM restart or start-order change, `SBC_IP` and `ASTERISK_IP` can differ from previous runs. When this happens:
 
 1. `virsh -c qemu:///system net-dhcp-leases default` to read current leases.
-2. Update `.env` (`SBC_IP`, `ASTERISK_IP`).
+2. Update `/etc/asterisk-lab/env` (`SBC_IP`, `ASTERISK_IP`).
 3. `make deploy-sbc` re-renders `/etc/opensips/opensips.cfg` and restarts opensips.
 4. If Asterisk moved, re-point baresip: `sed -i 's/<old-sbc>/<new-sbc>/g' ~/.baresip/accounts`.
 
@@ -545,7 +554,7 @@ SSH override for hosts with a broken global SSH config include: `SSH="ssh -F /de
 
 ### Monitoring env
 
-Monitoring VM `.env`:
+Monitoring VM `/etc/asterisk-lab/env`:
 
 ```text
 MONITORING_IP=

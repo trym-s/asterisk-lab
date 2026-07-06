@@ -25,8 +25,8 @@ Superseded decisions stay here and point to their replacement.
   specs and keeps the AGENTS.md read order simpler.
 - **Impact:** Agents read `docs/specs/` when `PLANS.md` names a governing
   spec. `docs/runbooks/spec-rules.md` documents the single-surface rules.
-  Removed `specs/` exclusions from the Makefile RSYNC_EXCLUDES as the
-  directory no longer exists.
+  Removed legacy `specs/` deploy exclusions because the directory no longer
+  exists.
 
 ## DEC-003 - Transcriber dependencies pinned; systemd hardening applied
 
@@ -47,18 +47,17 @@ Superseded decisions stay here and point to their replacement.
   `MemoryDenyWriteExecute=true`. Whisper uses date-based versions
   (`20250625`); verify on PyPI before assuming a typo.
 
-## DEC-004 - `.env` is host-local and never transported by `make deploy`
+## DEC-004 - Lab env is host-local and never transported by `make deploy`
 
-- **Decision:** The `RSYNC_EXCLUDES` list in the Makefile excludes `.env`
-  (along with `.git/`, `.github/`, `.agents/`, `.claude/`, `.codex/`,
-  `.mcp.json`, AGENTS/README/PROCESS/NOTES, `__pycache__/`,
-  `.rendered/`). Every VM has its own `.env` placed manually.
-- **Reason:** Rsyncing a real `.env` into a VM is a leak surface and
-  would silently overwrite per-VM secrets. Deploy must never touch
-  credential material.
-- **Impact:** New deploy flows must extend `RSYNC_EXCLUDES` to keep any
-  new secret file out of the payload. Bootstrap new VMs by copying
-  `.env` separately (`scp` or systemd-creds).
+- **Decision:** Deploy filters exclude `.env` and `.env.*`. VM runtime
+  secrets live in `/etc/asterisk-lab/env`; repo-local `.env` remains only a
+  host fallback for local workflows.
+- **Reason:** Rsyncing real env files into a VM is a leak surface and would
+  silently overwrite per-VM secrets. Deploy must never touch credential
+  material.
+- **Impact:** New deploy flows must keep env files out of payload filters.
+  Bootstrap new VMs by creating `/etc/asterisk-lab/env` manually or by using
+  a controlled secret mechanism such as systemd-creds.
 
 ## DEC-005 - The SBC initial-INVITE branch must be direction-aware
 
@@ -75,7 +74,7 @@ Superseded decisions stay here and point to their replacement.
 - **Impact:** Every future SBC routing change that touches the
   initial-INVITE branch must preserve the direction gate (or an
   equivalent) and be verified by exercising `Dial(PJSIP/<registered-ext>)`
-  end-to-end. VAL-SBC contracts must guard this.
+  end-to-end. Future validation must guard this behavior explicitly.
 
 ## DEC-006 - Shared skill store lives outside the repo; provider trees alias it
 
@@ -93,3 +92,18 @@ Superseded decisions stay here and point to their replacement.
   `.codex/skills` here. If the operator later decides to move to
   in-repo copies, the symlinks must be replaced with real directories
   and all three trees kept byte-identical in the same commit.
+
+## DEC-007 - VM deploy payloads live under /opt, secrets under /etc
+
+- **Decision:** Makefile deploy targets rsync role-specific payloads to
+  `/opt/asterisk-lab/current` using filters under `deploy/rsync/`. The
+  target directory is disposable output and does not need to be a git
+  checkout. Per-VM env lives in `/etc/asterisk-lab/env`.
+- **Reason:** Keeping payload under `~/asterisk-lab` made the VM directory
+  look like a source repository even when it was only rsync output. The new
+  layout follows Linux boundaries: source on the host, deploy bundle under
+  `/opt`, secrets under `/etc`, build cache under `/usr/local/src`, runtime
+  state under `/var`.
+- **Impact:** Installers load `/etc/asterisk-lab/env` first and fall back to
+  repo-local `.env` for host workflows. Verification should treat host git as
+  source of truth and VM `/opt/asterisk-lab/current` as rendered payload.

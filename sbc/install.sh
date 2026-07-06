@@ -10,9 +10,10 @@ cd "$REPO_ROOT"
 
 # ---- env ------------------------------------------------------------
 # shellcheck source=/dev/null
-[ -f .env ] && { set -a; . .env; set +a; }
-: "${SBC_IP:?SBC_IP not set; cp .env.example .env and fill in the SBC VM IP (virsh net-dhcp-leases default)}"
-: "${ASTERISK_IP:?ASTERISK_IP not set; add it to .env (the Asterisk VM IP that opensips will relay to)}"
+. "$REPO_ROOT/scripts/lib/env.sh"
+load_lab_env "$REPO_ROOT"
+: "${SBC_IP:?SBC_IP not set; add it to /etc/asterisk-lab/env or repo .env (virsh net-dhcp-leases default)}"
+: "${ASTERISK_IP:?ASTERISK_IP not set; add it to the lab env file (the Asterisk VM IP that opensips will relay to)}"
 
 SUDO=$([ "$(id -u)" -eq 0 ] && echo "" || echo "sudo")
 $SUDO -v 2>/dev/null || true

@@ -9,8 +9,9 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 cd "$REPO_ROOT"
 
 # shellcheck source=/dev/null
-[ -f .env ] && { set -a; . .env; set +a; }
-: "${OPENAI_API_KEY:?OPENAI_API_KEY not set in .env}"
+. "$REPO_ROOT/scripts/lib/env.sh"
+load_lab_env "$REPO_ROOT"
+: "${OPENAI_API_KEY:?OPENAI_API_KEY not set in the lab env file}"
 
 if [ -z "${VOICEBOT_REPO_REVISION:-}" ]; then
   if git -C "$REPO_ROOT" rev-parse --short=12 HEAD >/dev/null 2>&1; then
@@ -43,7 +44,7 @@ fi
 echo "==> starting Pipecat stack"
 cd "$HERE"
 $SUDO docker compose \
-  --env-file "$REPO_ROOT/.env" \
+  --env-file "$LAB_ENV_FILE" \
   up -d --build
 
 echo

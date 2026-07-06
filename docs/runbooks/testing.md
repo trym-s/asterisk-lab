@@ -27,11 +27,11 @@ because they need a live Debian VM.
 - Run the relevant `verify` target on the affected VM before declaring
   work done. Report failures honestly; never weaken a check to make it
   pass.
-- Voicebot changes must also satisfy the parity check in
-  `VAL-VOICEBOT-PARITY-001.md`.
+- Voicebot changes must also satisfy a fresh parity check across the affected
+  lanes.
 - Live runtime evidence (recordings, transcripts, trace logs) goes under
   ignored `runtime/` on the host or `/var/spool/`, `/var/lib/voicebot/`
   on the VMs, and is only linked (never pasted) from `PLANS.md`.
-- Shellcheck SC1091 on `. .env` or `. /etc/os-release` is expected;
+- Shellcheck SC1091 on dynamic env loads or `. /etc/os-release` is expected;
   suppress it with `# shellcheck source=/dev/null` on the line above
   each source. Do not disable SC1091 repo-wide.

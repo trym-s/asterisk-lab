@@ -9,10 +9,11 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 cd "$REPO_ROOT"
 
 # shellcheck source=/dev/null
-[ -f .env ] && { set -a; . .env; set +a; }
-: "${OPENAI_API_KEY:?OPENAI_API_KEY not set in .env}"
-: "${LIVEKIT_API_KEY:?LIVEKIT_API_KEY not set in .env (any 12+ char string)}"
-: "${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET not set in .env (any 32+ char random string)}"
+. "$REPO_ROOT/scripts/lib/env.sh"
+load_lab_env "$REPO_ROOT"
+: "${OPENAI_API_KEY:?OPENAI_API_KEY not set in the lab env file}"
+: "${LIVEKIT_API_KEY:?LIVEKIT_API_KEY not set in the lab env file (any 12+ char string)}"
+: "${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET not set in the lab env file (any 32+ char random string)}"
 
 if [ -z "${VOICEBOT_REPO_REVISION:-}" ]; then
   if git -C "$REPO_ROOT" rev-parse --short=12 HEAD >/dev/null 2>&1; then
@@ -75,7 +76,7 @@ cd "$HERE"
 $SUDO docker compose \
   -f docker-compose.yml \
   -f "$RENDERED/docker-compose.override.yml" \
-  --env-file "$REPO_ROOT/.env" \
+  --env-file "$LAB_ENV_FILE" \
   up -d --build
 
 # ---- 4. provision SIP inbound trunk + dispatch rule -----------------
@@ -86,7 +87,7 @@ $SUDO docker compose \
 # Uses the livekit-cli image for a one-shot idempotent apply. Names are
 # stable ids, so re-running skips creation if they already exist.
 echo "==> waiting for livekit-server to accept API calls"
-for i in {1..30}; do
+for _ in {1..30}; do
   if curl -sf http://127.0.0.1:7880/ >/dev/null 2>&1; then break; fi
   sleep 1
 done

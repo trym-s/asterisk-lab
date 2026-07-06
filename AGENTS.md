@@ -54,12 +54,13 @@ contracts define supported behavior and required evidence.
 | `docs/archive/plan/` | Dated archives of completed `PLANS.md` states. |
 | `docs/debates/` | Debate transcripts (ignored) and sanitized summaries (tracked). |
 | `docs/templates/` | Seed templates for plans, specs, kickoff prompts, TODO topics, subagent roles. |
+| `deploy/` | Host-side deploy filters and payload shaping rules. |
 | `.claude/` | Claude Code harness: skills, subagent roles, per-developer settings. |
 | `.codex/` | Codex harness: config, skills, subagent roles. |
 | `.agents/` | Provider-neutral shared skill library (see DEC-006 on skill store layout). |
 | `.githooks/` | Repo-managed git hooks (identity + ASCII + spec-boundary checks). |
 | `.github/` | GitHub Actions workflows. |
-| `asterisk/` | Asterisk VM source of truth: `*.tmpl` config files, `asterisk.service`, `transcriber.service`. |
+| `asterisk/` | Asterisk VM source of truth: `*.tmpl` config files, `rtp.conf`, `asterisk.service`, `transcriber.service`. |
 | `sbc/` | OpenSIPS + rtpengine source of truth: `opensips.cfg.tmpl`, `rtpengine.conf.tmpl`, `install.sh`, `verify.sh`. |
 | `monitoring/` | Zabbix + Grafana source of truth: install/verify scripts, dashboards, zabbix-agent2 setup. |
 | `services/` | Voicebot lanes and test harness (`livekit/`, `pipecat/`, `common/`, `test-caller/`). |
@@ -117,10 +118,10 @@ Rules:
   Application source and user-facing content are not subject to this ASCII
   check. Harness paths that legitimately need non-ASCII content can be
   exempted in `.githooks/ascii-allowlist`.
-- Keep secrets out of git. Secrets live only in ignored `.env` files or
-  host-local secret stores; `.env.example` carries the shape with names or
-  sentinel values, never real credentials. Runtime state and evidence
-  belong under ignored `runtime/`.
+- Keep secrets out of git. VM secrets live in `/etc/asterisk-lab/env`;
+  host-local workflows may use ignored `.env` files or local secret stores.
+  `.env.example` carries the shape with names or sentinel values, never real
+  credentials. Runtime state and evidence belong under ignored `runtime/`.
 - Agent memory is repo-tracked only (hard rule). Durable knowledge goes to
   `docs/memory/*`, never to harness-private storage.
 - Spec naming boundary (hard rule): `specNN` tokens may appear only in
@@ -130,9 +131,9 @@ Rules:
 - TODO tracking (hard rule): `TODO.md` and `docs/todo/*` are operator-owned.
   Agents may propose entries but must not add, close, or edit them without
   explicit operator approval.
-- If a task conflicts with `docs/memory/decisions.md` or a VAL-* contract,
-  do not proceed silently. Report the conflict and propose an updated
-  decision or contract.
+- If a task conflicts with `docs/memory/decisions.md` or a governing
+  contract, do not proceed silently. Report the conflict and propose an
+  updated decision or contract.
 - Root-cause first: prefer architectural fixes over band-aids; never hide a
   failure to make a check pass.
 - Leave no repository change uncommitted at the end of a task.
@@ -148,12 +149,15 @@ Rules:
 - Installers are idempotent. `install.sh`, `sbc/install.sh`,
   `monitoring/install.sh`, and the voicebot lane installers must be safe
   to re-run on an already-configured box.
-- Secrets and per-host values live in ignored `.env` files. `.env.example`
-  carries only names and non-secret defaults. `make deploy` never
-  transports `.env` (see DEC-004).
+- Deploy payloads live under `/opt/asterisk-lab/current` on each VM. That
+  directory is disposable rsync output, not a source repository.
+- Secrets and per-host values live in `/etc/asterisk-lab/env` on VMs.
+  Host-local `.env` files are only a local fallback. `.env.example` carries
+  only names and non-secret defaults. `make deploy` never transports `.env`
+  (see DEC-004 and DEC-007).
 - Real VM IPs are DHCP-allocated and not fixed. Specs, scripts, and
   templates must not hardcode last-seen IPs. Read live values from
-  `virsh net-dhcp-leases default` after boot, or from the target `.env`.
+  `virsh net-dhcp-leases default` after boot, or from the target lab env.
 - Rendered configs under `/etc/asterisk`, `/etc/opensips`,
   `/etc/rtpengine`, `/etc/zabbix`, and Grafana provisioning state are
   outputs, not sources.
@@ -163,8 +167,8 @@ Rules:
   B2BUA legs) fall through to their R-URI instead of being looped back
   to Asterisk (see DEC-005).
 - Voicebot lanes (LiveKit, Pipecat) are comparison surfaces. Parity must
-  be proven through the VAL-VOICEBOT-* contracts before a lane is treated
-  as stable; shared model/cost policy lives under `services/common/`.
+  be proven with fresh runtime evidence before a lane is treated as stable;
+  shared model/cost policy lives under `services/common/`.
 
 ## 7. Environment And Safety
 

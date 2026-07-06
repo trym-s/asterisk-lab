@@ -5,9 +5,9 @@
 ## Directory Structure
 
 - `docs/specs/`: Cross-cutting, harness-level, or programme-level specs (`specNN-topic.md`), paired with kickoff prompts under `docs/prompts/`.
-- `docs/specs/global/`: Repo-wide mission, conventions, environment, validation, and routing.
-- `docs/specs/domains/`: Authoritative subsystem specs (`spec.md`), runbooks (`runbook.md`), local decisions (`decisions.md`), and validation contracts (`contracts/VAL-*.md`).
-- `docs/specs/changes/`: Proposed changes and migrations (not current truth by themselves).
+- Historical domain/global specs were removed after the harness migration
+  because they were stale. Do not recreate that tree unless a new governing
+  spec asks for it.
 
 ## `docs/specs/` - governing specs
 

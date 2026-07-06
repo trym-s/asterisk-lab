@@ -14,9 +14,10 @@ REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 cd "$HERE"
 
 # shellcheck source=/dev/null
-[ -f "$REPO_ROOT/.env" ] && { set -a; . "$REPO_ROOT/.env"; set +a; }
-: "${ELEVENLABS_API_KEY:?ELEVENLABS_API_KEY not set in .env}"
-: "${ELEVENLABS_VOICE_ID:?ELEVENLABS_VOICE_ID not set in .env (e.g. a Turkish voice)}"
+. "$REPO_ROOT/scripts/lib/env.sh"
+load_lab_env "$REPO_ROOT"
+: "${ELEVENLABS_API_KEY:?ELEVENLABS_API_KEY not set in the lab env file}"
+: "${ELEVENLABS_VOICE_ID:?ELEVENLABS_VOICE_ID not set in the lab env file (e.g. a Turkish voice)}"
 # Flash v2.5 is the current low-latency / low-cost Turkish-capable model.
 # Alternatives: eleven_turbo_v2_5 (mid) or eleven_multilingual_v2 (highest fidelity).
 : "${ELEVENLABS_MODEL_ID:=eleven_flash_v2_5}"
@@ -58,7 +59,7 @@ tail -n +2 utterances.tsv | while IFS=$'\t' read -r id text; do
   fi
 
   # Wrap the raw PCM in a WAV header (ffmpeg is the cheapest way).
-  ffmpeg -y -loglevel error -f s16le -ar 16000 -ac 1 -i "$raw" -c:a pcm_s16le "$out"
+  ffmpeg -nostdin -y -loglevel error -f s16le -ar 16000 -ac 1 -i "$raw" -c:a pcm_s16le "$out"
   rm -f "$raw"
 
   # Log the character spend so usage_summary.py picks it up.
