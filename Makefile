@@ -14,6 +14,7 @@ MONITORING_VM ?= deb@192.168.122.13
 SSH    ?= ssh
 RSYNC  ?= rsync
 RSYNC_SSH ?= $(SSH)
+DEPLOY_REVISION ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)$(shell test -z "$$(git status --porcelain 2>/dev/null)" || echo -dirty)
 
 # rsync exclusions for deploy paths. VMs receive only runtime/install payload.
 # Specs, agent guidance, repo docs, CI config, and secrets stay host/GitHub-side.
@@ -90,7 +91,8 @@ install-voicebot-livekit: ## Provision the LiveKit voicebot stack on this host
 
 deploy-voicebot-livekit: ## rsync repo to $(VM), then provision LiveKit stack there
 	$(RSYNC) -e "$(RSYNC_SSH)" -av --delete $(RSYNC_EXCLUDES) ./ $(VM):~/asterisk-lab/
-	$(SSH) $(VM) 'cd ~/asterisk-lab && sudo -E ./services/livekit/install.sh'
+	$(SSH) $(VM) 'printf "%s\n" "$(DEPLOY_REVISION)" > ~/asterisk-lab/.deploy-revision'
+	$(SSH) $(VM) 'cd ~/asterisk-lab && VOICEBOT_REPO_REVISION="$$(cat .deploy-revision 2>/dev/null || echo unknown)" sudo -E ./services/livekit/install.sh'
 
 logs-voicebot-livekit: ## Tail LiveKit stack container logs on $(VM)
 	$(SSH) $(VM) 'sudo docker logs -f --tail=100 lk-agent lk-sip lk-server 2>&1'
@@ -100,7 +102,8 @@ install-voicebot-pipecat: ## Provision the Pipecat voicebot stack on this host
 
 deploy-voicebot-pipecat: ## rsync repo to $(VM), then provision Pipecat stack there
 	$(RSYNC) -e "$(RSYNC_SSH)" -av --delete $(RSYNC_EXCLUDES) ./ $(VM):~/asterisk-lab/
-	$(SSH) $(VM) 'cd ~/asterisk-lab && sudo -E ./services/pipecat/install.sh'
+	$(SSH) $(VM) 'printf "%s\n" "$(DEPLOY_REVISION)" > ~/asterisk-lab/.deploy-revision'
+	$(SSH) $(VM) 'cd ~/asterisk-lab && VOICEBOT_REPO_REVISION="$$(cat .deploy-revision 2>/dev/null || echo unknown)" sudo -E ./services/pipecat/install.sh'
 
 logs-voicebot-pipecat: ## Tail Pipecat agent logs on $(VM)
 	$(SSH) $(VM) 'sudo docker logs -f --tail=100 pc-agent 2>&1'
