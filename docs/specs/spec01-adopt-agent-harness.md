@@ -103,7 +103,7 @@ Not applicable. This spec is a governance and documentation initiative.
 - `docs/memory/decisions.md` contains DEC-001..DEC-006.
 - `docs/architecture/app-architecture.md` describes the real three-VM
   plus voicebot layout.
-- `docs/runbooks/spec-rules.md` documents both spec surfaces.
+- `docs/runbooks/spec-rules.md` documents the consolidated single spec surface.
 - No `*.template` files remain anywhere in the repository.
 - `INIT.md` and the empty `awt/` directory no longer exist.
 - The pre-commit hook accepts a commit with `git config user.name
