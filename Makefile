@@ -11,6 +11,10 @@ SHELL  := /bin/bash
 VM     ?= deb@192.168.122.247
 SBC_VM ?= deb@192.168.122.3
 MONITORING_VM ?= deb@192.168.122.13
+VIRSH             ?= sudo virsh
+ASTERISK_DOMAIN   ?= asterisk-deb13-cloudinit
+SBC_DOMAIN        ?= opensips-sbc-deb13-cloudinit
+MONITORING_DOMAIN ?= monitoring-deb13-cloudinit
 SSH    ?= ssh
 RSYNC  ?= rsync
 RSYNC_SSH ?= $(SSH)
@@ -113,6 +117,34 @@ gen-utterances: ## Generate test-caller WAVs via ElevenLabs (uses host .env)
 
 usage-summary: ## Print API spend summary from /var/lib/voicebot/usage.jsonl on $(VM)
 	$(SSH) $(VM) 'python3 ~/asterisk-lab/services/common/usage_summary.py $(ARGS)'
+
+# ---- VM Management (virsh) targets ----------------------------------------
+
+.PHONY: vms ips up down up-sbc down-sbc up-mon down-mon
+
+vms: ## List all local libvirt VMs
+	$(VIRSH) list --all
+
+ips: ## Show DHCP leases (active VM IPs)
+	$(VIRSH) net-dhcp-leases default
+
+up: ## Start the Asterisk VM
+	$(VIRSH) start $(ASTERISK_DOMAIN)
+
+down: ## Gracefully shutdown the Asterisk VM
+	$(VIRSH) shutdown $(ASTERISK_DOMAIN)
+
+up-sbc: ## Start the SBC VM
+	$(VIRSH) start $(SBC_DOMAIN)
+
+down-sbc: ## Gracefully shutdown the SBC VM
+	$(VIRSH) shutdown $(SBC_DOMAIN)
+
+up-mon: ## Start the Monitoring VM
+	$(VIRSH) start $(MONITORING_DOMAIN)
+
+down-mon: ## Gracefully shutdown the Monitoring VM
+	$(VIRSH) shutdown $(MONITORING_DOMAIN)
 
 # ---- shared ---------------------------------------------------------------
 

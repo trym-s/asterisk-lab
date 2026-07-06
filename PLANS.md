@@ -51,6 +51,7 @@
 
 ## Recent updates
 
+- 2026-07-06 - Added simplified VM management (virsh) targets (`vms`, `ips`, `up`, `down`, `up-sbc`, `down-sbc`, `up-mon`, `down-mon`) to the `Makefile`.
 - 2026-07-06 - Migrated all domain specs, contracts, decisions, and runbooks under `docs/specs/` (placed into `docs/specs/domains/`, `docs/specs/global/`, and `docs/specs/changes/`). Fixed path references in domains README, conventions, agent-routing, and validation model. Updated Makefile default VM IP.
 - 2026-07-06 - Harness initialized from agent-workflow-template. AGENTS.md
   rewritten to 10-section layout; `docs/specs/spec01` created for
