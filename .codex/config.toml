@@ -1,0 +1,29 @@
+# Codex configuration for the asterisk-lab project.
+# Model, sandbox, and reasoning-effort are starting points; adjust in a
+# follow-up commit when the operator settles on preferred defaults.
+model = "gpt-5.5"
+sandbox_mode = "danger-full-access"
+model_reasoning_effort = "xhigh"
+project_root_markers = [".git", ".codex", "AGENTS.md"]
+
+[features]
+# AGENTS.md hard rule: agent memory is repo-tracked only. Durable knowledge
+# goes to docs/memory/*, never to Codex's private memory store.
+memories = false
+
+# Project MCP servers, mirrored with .mcp.json (both files stay in sync).
+[mcp_servers.zenith]
+command = "uv"
+args = [
+  "run",
+  "--project",
+  "/home/vlhnac/local_dev/zenith/zenith",
+  "zenith-server",
+  "--mode",
+  "orchestrator",
+]
+
+[mcp_servers.zenith.env]
+ZENITH_ORCHESTRATOR_PROVIDER = "claude"
+ZENITH_WORKER_PROVIDER = "claude"
+ZENITH_WORKER_ACP_COMMAND = "claude-agent-acp"

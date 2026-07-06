@@ -1,7 +1,22 @@
+# Local runtime secrets and state
 .env
+.env.*
+!.env.example
+runtime/
+logs/
 .venv/
+venv/
+
+# Python and tooling caches
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Recordings and transcripts (produced under /var/spool on the VM; keep any
+# stray host-side copies out of git too).
 *.wav
 *.txt.tmp
 recordings/
@@ -11,9 +26,28 @@ transcripts/
 # .rendered/ that must not travel via rsync or git.
 services/*/.rendered/
 
-# Personal living notes for the author — not for the repo's audience.
+# Personal living notes for the author - not for the repo's audience.
 NOTES.md
 
 # Per-developer Claude Code settings (skills under .claude/skills/ are tracked).
 .claude/settings.local.json
 
+# Project-local Codex home. Keep only non-secret project configuration.
+.codex/*
+!.codex/
+!.codex/README.md
+!.codex/config.toml
+!.codex/agents/
+!.codex/agents/**
+!.codex/skills/
+!.codex/skills/**
+
+# Agent debate transcripts (raw copies are never committed; sanitized
+# summary.md files at docs/debates/<topic>/summary.md are tracked when the
+# operator explicitly asks to preserve the outcome).
+docs/debates/*/transcript.md
+
+# OS and editor noise
+.DS_Store
+*.swp
+*.swo
