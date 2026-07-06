@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
+import time
 from typing import Callable, Awaitable
 
 logger = logging.getLogger("audiosocket")
@@ -75,6 +76,51 @@ class AudioSocketSession:
         self.inbound: asyncio.Queue[bytes] = asyncio.Queue(maxsize=200)
         self.outbound: asyncio.Queue[bytes] = asyncio.Queue(maxsize=200)
         self._closed = asyncio.Event()
+        self.inbound_bytes = 0
+        self.inbound_frames = 0
+        self.outbound_bytes = 0
+        self.outbound_frames = 0
+        self.idle_silence_bytes = 0
+        self.idle_silence_frames = 0
+        self.first_inbound_ts: float | None = None
+        self.last_inbound_ts: float | None = None
+        self.first_outbound_ts: float | None = None
+        self.last_outbound_ts: float | None = None
+        self._outbound_generation = 0
+
+    def clear_outbound(self) -> int:
+        """Drop pending bot audio and invalidate the chunk currently being written."""
+        self._outbound_generation += 1
+        dropped = 0
+        while True:
+            try:
+                self.outbound.get_nowait()
+                dropped += 1
+            except asyncio.QueueEmpty:
+                break
+        return dropped
+
+    def audio_stats(self) -> dict:
+        bytes_per_second = SAMPLE_RATE * 2
+        return {
+            "sample_rate": SAMPLE_RATE,
+            "frame_ms": FRAME_MS,
+            "frame_bytes": FRAME_BYTES,
+            "inbound_bytes": self.inbound_bytes,
+            "inbound_frames": self.inbound_frames,
+            "inbound_duration_ms": int((self.inbound_bytes / bytes_per_second) * 1000),
+            "first_inbound_ts": self.first_inbound_ts,
+            "last_inbound_ts": self.last_inbound_ts,
+            "outbound_bytes": self.outbound_bytes,
+            "outbound_frames": self.outbound_frames,
+            "outbound_duration_ms": int((self.outbound_bytes / bytes_per_second) * 1000),
+            "idle_silence_bytes": self.idle_silence_bytes,
+            "idle_silence_frames": self.idle_silence_frames,
+            "idle_silence_duration_ms": int((self.idle_silence_bytes / bytes_per_second) * 1000),
+            "first_outbound_ts": self.first_outbound_ts,
+            "last_outbound_ts": self.last_outbound_ts,
+            "uuid": self.uuid,
+        }
 
     async def _reader_loop(self) -> None:
         """Pull frames from Asterisk, drop into inbound queue."""
@@ -89,6 +135,12 @@ class AudioSocketSession:
                     self.uuid = payload.hex()
                     logger.info("audiosocket: uuid=%s", self.uuid)
                 elif msg_type == TYPE_AUDIO:
+                    now = time.time()
+                    if self.first_inbound_ts is None:
+                        self.first_inbound_ts = now
+                    self.last_inbound_ts = now
+                    self.inbound_bytes += len(payload)
+                    self.inbound_frames += 1
                     try:
                         self.inbound.put_nowait(payload)
                     except asyncio.QueueFull:
@@ -116,14 +168,41 @@ class AudioSocketSession:
         """Pull PCM frames from outbound queue, frame + send to Asterisk."""
         try:
             while not self._closed.is_set():
-                pcm = await self.outbound.get()
+                is_idle_silence = False
+                try:
+                    pcm = await asyncio.wait_for(
+                        self.outbound.get(),
+                        timeout=FRAME_MS / 1000,
+                    )
+                except asyncio.TimeoutError:
+                    if not self.uuid:
+                        continue
+                    pcm = b"\x00" * FRAME_BYTES
+                    is_idle_silence = True
                 if not pcm:
                     break
                 # Frame in ptime-sized chunks so we honor 20 ms cadence.
+                generation = self._outbound_generation
                 for i in range(0, len(pcm), FRAME_BYTES):
+                    if generation != self._outbound_generation:
+                        logger.info("audiosocket: interrupted outbound audio uuid=%s", self.uuid)
+                        break
                     chunk = pcm[i:i + FRAME_BYTES]
+                    if len(chunk) < FRAME_BYTES:
+                        chunk += b"\x00" * (FRAME_BYTES - len(chunk))
+                    now = time.time()
+                    if self.first_outbound_ts is None:
+                        self.first_outbound_ts = now
+                    self.last_outbound_ts = now
+                    self.outbound_bytes += len(chunk)
+                    self.outbound_frames += 1
+                    if is_idle_silence:
+                        self.idle_silence_bytes += len(chunk)
+                        self.idle_silence_frames += 1
                     self.writer.write(_pack_audio(chunk))
-                await self.writer.drain()
+                    await self.writer.drain()
+                    if not is_idle_silence:
+                        await asyncio.sleep(FRAME_MS / 1000)
         except Exception:  # noqa: BLE001
             logger.exception("audiosocket writer crashed uuid=%s", self.uuid)
         finally:

@@ -12,6 +12,17 @@ cd "$REPO_ROOT"
 [ -f .env ] && { set -a; . .env; set +a; }
 : "${OPENAI_API_KEY:?OPENAI_API_KEY not set in .env}"
 
+if [ -z "${VOICEBOT_REPO_REVISION:-}" ]; then
+  if git -C "$REPO_ROOT" rev-parse --short=12 HEAD >/dev/null 2>&1; then
+    VOICEBOT_REPO_REVISION="$(git -C "$REPO_ROOT" rev-parse --short=12 HEAD)"
+  elif [ -f "$REPO_ROOT/.deploy-revision" ]; then
+    VOICEBOT_REPO_REVISION="$(cat "$REPO_ROOT/.deploy-revision")"
+  else
+    VOICEBOT_REPO_REVISION="unknown"
+  fi
+fi
+export VOICEBOT_REPO_REVISION
+
 SUDO=$([ "$(id -u)" -eq 0 ] && echo "" || echo "sudo")
 
 # ---- 0. shared usage/turns log dir (idempotent, mirrors LK install.sh) --
