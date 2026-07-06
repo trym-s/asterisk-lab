@@ -19,6 +19,10 @@ and local Whisper transcription.
   deployed.
 - Extension `1099` is reserved for LiveKit SIP gateway when that lane is
   deployed.
+- Voicebot benchmark validation may require Asterisk-side recording evidence
+  that distinguishes caller audio received by the VM from bot audio sent back
+  toward the caller. Any such recording behavior is rendered from
+  `asterisk/extensions.conf.tmpl`, not hand-edited on the VM.
 
 ## Source Files
 

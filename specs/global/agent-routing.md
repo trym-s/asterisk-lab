@@ -12,7 +12,8 @@ Use this table before changing files or running operational commands.
 | Rotate SIP password | `domains/asterisk/` | `.claude/skills/rotating-passwords/SKILL.md` |
 | Zabbix, Grafana, metrics, dashboards | `domains/monitoring/` | `global/env.md` |
 | LiveKit, Pipecat, voicebot agents | `domains/voicebot/` | `domains/voicebot/benchmark.md` |
-| Benchmark or utterance suite | `domains/voicebot/` | `domains/voicebot/benchmark.md` |
+| Voicebot trace, observer UI, reports, model/cost policy | `domains/voicebot/` | `domains/voicebot/contracts/VAL-VOICEBOT-*.md` |
+| Benchmark, utterance suite, or audio integrity | `domains/voicebot/` | `domains/voicebot/benchmark.md` |
 | Spec architecture or contracts | `global/` and affected domain | `global/validation.md` |
 
 If a request spans domains, read every affected domain and create or update a

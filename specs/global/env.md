@@ -19,7 +19,16 @@ MONITORING_IP       required only for zabbix-agent2 setup
 OPENAI_API_KEY      required for voicebot agents
 LIVEKIT_API_KEY     required for LiveKit lane
 LIVEKIT_API_SECRET  required for LiveKit lane
+VOICEBOT_MODEL_PROFILE optional shared model/cost profile name
+VOICEBOT_STT_MODEL     optional shared STT model override
+VOICEBOT_LLM_MODEL     optional shared LLM model override
+VOICEBOT_TTS_MODEL     optional shared TTS model override
+VOICEBOT_TTS_VOICE     optional shared TTS voice override
 ```
+
+Voicebot model overrides are comparable only when LiveKit and Pipecat read the
+same values. The observer service must not receive provider or SIP secrets; it
+reads generated `/var/lib/voicebot` artifacts only.
 
 ## SBC VM
 
