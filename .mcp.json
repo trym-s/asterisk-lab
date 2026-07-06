@@ -1,21 +1,3 @@
 {
-  "mcpServers": {
-    "zenith": {
-      "type": "stdio",
-      "command": "uv",
-      "args": [
-        "run",
-        "--project",
-        "/home/vlhnac/local_dev/zenith/zenith",
-        "zenith-server",
-        "--mode",
-        "orchestrator"
-      ],
-      "env": {
-        "ZENITH_ORCHESTRATOR_PROVIDER": "claude",
-        "ZENITH_WORKER_PROVIDER": "claude",
-        "ZENITH_WORKER_ACP_COMMAND": "claude-agent-acp"
-      }
-    }
-  }
+  "mcpServers": {}
 }

@@ -12,18 +12,4 @@ project_root_markers = [".git", ".codex", "AGENTS.md"]
 memories = false
 
 # Project MCP servers, mirrored with .mcp.json (both files stay in sync).
-[mcp_servers.zenith]
-command = "uv"
-args = [
-  "run",
-  "--project",
-  "/home/vlhnac/local_dev/zenith/zenith",
-  "zenith-server",
-  "--mode",
-  "orchestrator",
-]
-
-[mcp_servers.zenith.env]
-ZENITH_ORCHESTRATOR_PROVIDER = "claude"
-ZENITH_WORKER_PROVIDER = "claude"
-ZENITH_WORKER_ACP_COMMAND = "claude-agent-acp"
+# None configured at project scope; add here and in .mcp.json together.
