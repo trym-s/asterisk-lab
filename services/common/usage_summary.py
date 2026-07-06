@@ -62,9 +62,10 @@ def main() -> int:
         return 1
     cutoff = parse_since(args.since) if args.since else 0
 
-    # (provider, op, unit_type) -> total units
-    totals: dict[tuple[str, str, str], float] = defaultdict(float)
-    counts: dict[tuple[str, str, str], int] = defaultdict(int)
+    # (lane, provider, stage, model, op, unit_type) -> totals
+    totals: dict[tuple[str, str, str, str, str, str], float] = defaultdict(float)
+    costs: dict[tuple[str, str, str, str, str, str], float] = defaultdict(float)
+    counts: dict[tuple[str, str, str, str, str, str], int] = defaultdict(int)
 
     with args.log.open() as f:
         for line in f:
@@ -76,27 +77,45 @@ def main() -> int:
                 continue
             if args.provider and row.get("provider") != args.provider:
                 continue
-            key = (row["provider"], row["op"], row["unit_type"])
+            key = (
+                row.get("lane") or "unknown",
+                row["provider"],
+                row.get("stage") or row.get("op") or "unknown",
+                row.get("model") or "unknown",
+                row["op"],
+                row["unit_type"],
+            )
             totals[key] += float(row["units"])
+            if row.get("estimated_usd") is not None:
+                costs[key] += float(row["estimated_usd"])
             counts[key] += 1
 
     if not totals:
         print("(no matching records)")
         return 0
 
-    header = f"{'provider':<12} {'op':<8} {'unit_type':<12} {'events':>7} {'units':>14} {'est USD':>10}"
+    header = (
+        f"{'lane':<9} {'provider':<12} {'stage':<8} {'model':<18} "
+        f"{'op':<8} {'unit_type':<16} {'events':>7} {'units':>14} {'est USD':>10}"
+    )
     print(header)
     print("-" * len(header))
     grand = 0.0
     for key in sorted(totals):
-        provider, op, unit_type = key
+        lane, provider, stage, model, op, unit_type = key
         units = totals[key]
-        rate = PRICE.get(key)
-        cost = units * rate if rate is not None else None
+        cost = costs[key] if costs[key] else None
+        if cost is None:
+            rate = PRICE.get((provider, op, unit_type))
+            cost = units * rate if rate is not None else None
         cost_s = f"${cost:>9.4f}" if cost is not None else "         ?"
         if cost:
             grand += cost
-        print(f"{provider:<12} {op:<8} {unit_type:<12} {counts[key]:>7} {units:>14,.2f} {cost_s:>10}")
+        model_s = model if len(model) <= 18 else model[:17] + "…"
+        print(
+            f"{lane:<9} {provider:<12} {stage:<8} {model_s:<18} "
+            f"{op:<8} {unit_type:<16} {counts[key]:>7} {units:>14,.2f} {cost_s:>10}"
+        )
     print("-" * len(header))
     print(f"{'TOTAL':<{len(header) - 11}} ${grand:>9.4f}")
     return 0

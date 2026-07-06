@@ -8,7 +8,9 @@ Write path is fixed to /var/lib/voicebot/usage.jsonl inside the container;
 the host mounts /var/lib/voicebot on the VM as a bind volume so records
 survive container recreations.
 
-Prices in usage_summary.py are estimates as of Q3 2026. Update there, not here.
+Cost fields are row metadata. The first trace foundation records the pricing
+version even when estimated_usd is null; final provider pricing decisions are
+handled by the later model/cost goal.
 """
 
 from __future__ import annotations
@@ -18,6 +20,8 @@ import os
 import time
 from pathlib import Path
 from typing import Any
+
+import voicebot_profile
 
 def _default_log_path() -> Path:
     """Pick a writable log path.
@@ -50,6 +54,13 @@ def record(
     unit_type: str,
     ref: str | None = None,
     extra: dict[str, Any] | None = None,
+    lane: str | None = None,
+    call_id: str | None = None,
+    turn_id: str | None = None,
+    stage: str | None = None,
+    model: str | None = None,
+    pricing_version: str | None = None,
+    estimated_usd: float | None = None,
 ) -> None:
     """Append one usage event.
 
@@ -66,12 +77,20 @@ def record(
         "op": op,
         "units": units,
         "unit_type": unit_type,
+        "lane": lane,
+        "call_id": call_id,
+        "turn_id": turn_id,
+        "stage": stage,
+        "model": model,
+        "estimated_usd": estimated_usd,
+        "pricing_version": pricing_version or voicebot_profile.PRICING_VERSION,
     }
     if ref is not None:
         row["ref"] = ref
     if extra:
         row.update(extra)
 
-    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with LOG_PATH.open("a", encoding="utf-8") as f:
+    log_path = _default_log_path()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
