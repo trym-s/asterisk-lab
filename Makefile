@@ -8,7 +8,7 @@
 .PHONY: help install verify deploy logs install-sbc verify-sbc deploy-sbc logs-sbc install-monitoring verify-monitoring deploy-monitoring logs-monitoring install-zabbix-agent verify-zabbix-agent deploy-agent-asterisk deploy-agent-sbc clean
 
 SHELL  := /bin/bash
-VM     ?= deb@192.168.122.20
+VM     ?= deb@192.168.122.247
 SBC_VM ?= deb@192.168.122.3
 MONITORING_VM ?= deb@192.168.122.13
 SSH    ?= ssh

@@ -2,6 +2,13 @@
 
 `docs/specs/` is the single spec surface in this repository (see DEC-002).
 
+## Directory Structure
+
+- `docs/specs/`: Cross-cutting, harness-level, or programme-level specs (`specNN-topic.md`), paired with kickoff prompts under `docs/prompts/`.
+- `docs/specs/global/`: Repo-wide mission, conventions, environment, validation, and routing.
+- `docs/specs/domains/`: Authoritative subsystem specs (`spec.md`), runbooks (`runbook.md`), local decisions (`decisions.md`), and validation contracts (`contracts/VAL-*.md`).
+- `docs/specs/changes/`: Proposed changes and migrations (not current truth by themselves).
+
 ## `docs/specs/` - governing specs
 
 - Large, risky, multi-step, operationally significant, or

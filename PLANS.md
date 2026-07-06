@@ -26,10 +26,12 @@
 - [x] Land the initialization commit (`chore(harness): initialize
       agent-workflow-template`) after removing `INIT.md` and the empty
       `awt/` directory.
-- [x] Decommission legacy `specs/` directory (domain contracts, runbooks,
-      decisions, changes). Consolidated into `docs/specs/` as the single
-      spec surface. Updated DEC-002 entry.
-- [x] Remove all stale `specs/` references from repository files.
+- [x] Migrate legacy `specs/` directory (domain specs, contracts, decisions, changes)
+      under `docs/specs/` (into `docs/specs/domains/`, `docs/specs/global/`,
+      and `docs/specs/changes/`). Consolidated into `docs/specs/` as the
+      single spec surface. Updated DEC-002 entry.
+- [x] Update references to `specs/` to `docs/specs/` across repository files.
+- [x] Update Makefile default VM IP to point to the active Asterisk VM (192.168.122.247).
 - [ ] Follow-up: extract more DEC-* entries from git history (LiveKit
       wideband trial, Pipecat AudioSocket lane, monitoring provisioning
       quirks). Tracked as scope inside spec01.
@@ -45,10 +47,11 @@
   governance and operational baselines.
 - `docs/architecture/app-architecture.md` describes the current
   three-VM plus voicebot layout.
-- `specs/` has been decommissioned; `docs/specs/` is the single spec surface.
+- `docs/specs/` is the single spec surface, with domain contracts migrated under `docs/specs/domains/` and `docs/specs/global/`.
 
 ## Recent updates
 
+- 2026-07-06 - Migrated all domain specs, contracts, decisions, and runbooks under `docs/specs/` (placed into `docs/specs/domains/`, `docs/specs/global/`, and `docs/specs/changes/`). Fixed path references in domains README, conventions, agent-routing, and validation model. Updated Makefile default VM IP.
 - 2026-07-06 - Harness initialized from agent-workflow-template. AGENTS.md
   rewritten to 10-section layout; `docs/specs/spec01` created for
   the adoption effort itself.
