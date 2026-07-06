@@ -1,11 +1,11 @@
 # Claude Agent Entry Point
 
-Claude agents should treat `../specs/README.md` as the spec index and
-`../AGENTS.md` as the repo-wide operating rules.
+Claude agents should treat `../AGENTS.md` as the repo-wide operating rules
+and `../docs/specs/` for governing specs.
 
 ## Routing
 
-Read `../specs/global/agent-routing.md` before choosing a skill.
+Read `../AGENTS.md` before choosing a skill.
 
 Common mappings:
 

@@ -22,15 +22,10 @@ Start every session in this order:
 
 1. `AGENTS.md` (this file).
 2. `PLANS.md` (live execution state).
-3. `specs/README.md` and `specs/global/agent-routing.md` for the domain map
-   and routing table.
-4. The selected `specs/domains/<domain>/spec.md`, `runbook.md`,
-   `decisions.md`, and matching `contracts/VAL-*.md`.
-5. Any cross-cutting governing spec under `docs/specs/`, if `PLANS.md`
-   points to one.
-6. Relevant `docs/memory/*` files.
-7. Relevant `docs/architecture/*` files.
-8. Relevant `docs/runbooks/*` files.
+3. The governing spec under `docs/specs/`, if `PLANS.md` points to one.
+4. Relevant `docs/memory/*` files.
+5. Relevant `docs/architecture/*` files.
+6. Relevant `docs/runbooks/*` files.
 
 `README.md`, `PROCESS.md`, and `NOTES.md` are not acceptance sources. They
 explain onboarding, current state, or personal rationale, but the specs and
@@ -49,8 +44,7 @@ contracts define supported behavior and required evidence.
 | `PROCESS.md` | Current-state index, not acceptance. |
 | `Makefile` | Operator-facing entry point for install/verify/deploy/logs per VM. |
 | `install.sh` | Asterisk VM installer (source build + config render + service enable). |
-| `specs/` | Authoritative source of supported behavior. Domain specs, VAL-* contracts, runbooks, decisions. |
-| `docs/specs/` | Cross-cutting harness or programme-level specs (`specNN-topic.md`); paired with `docs/prompts/`. See DEC-002 for scope split with `specs/`. |
+| `docs/specs/` | Governing specs (`specNN-topic.md`); paired with `docs/prompts/`. |
 | `docs/prompts/` | Short kickoff prompts paired to `docs/specs/`. |
 | `docs/memory/` | Proven product-local decisions, bugs, and reusable facts. |
 | `docs/runbooks/` | Operational procedures and the plan/spec rules. |
@@ -77,7 +71,7 @@ contracts define supported behavior and required evidence.
 
 Three layers; use the smallest set that covers the task:
 
-- Constitution and execution state: `AGENTS.md`, `PLANS.md`, `specs/`,
+- Constitution and execution state: `AGENTS.md`, `PLANS.md`,
   `docs/specs/`, and `docs/memory/`.
 - Subagents (bounded evidence lanes and domain reviewers) live under
   `.claude/agents/*.md` and `.codex/agents/*.toml`. The current set includes
@@ -109,7 +103,7 @@ Rules:
 - Language rules:
   - All AI context and workflow content is always written in English: this
     file, `PLANS.md`, `TODO.md`, `DEBATE.md`, everything under `docs/`,
-    `specs/`, `.claude/`, `.codex/`, and `.agents/`.
+    `.claude/`, `.codex/`, and `.agents/`.
   - Source code is always written in English: identifiers, comments, log
     messages, and commit messages.
   - User-facing content (UI strings, API/user messages, templates, fixtures)
@@ -130,7 +124,7 @@ Rules:
 - Agent memory is repo-tracked only (hard rule). Durable knowledge goes to
   `docs/memory/*`, never to harness-private storage.
 - Spec naming boundary (hard rule): `specNN` tokens may appear only in
-  `docs/`, `specs/`, the root workflow files, and the harness directories.
+  `docs/`, the root workflow files, and the harness directories.
   They must never appear in application source, identifiers, config keys,
   service names, or runtime paths. The pre-commit hook enforces this.
 - TODO tracking (hard rule): `TODO.md` and `docs/todo/*` are operator-owned.
@@ -204,10 +198,7 @@ Work is done only when all of these hold:
   failure is explicitly reported. Targets are `make verify` (Asterisk),
   `make verify-sbc` (SBC), `make verify-monitoring` (monitoring),
   and `make verify-zabbix-agent` on monitored nodes.
-- The affected `specs/domains/<domain>/contracts/VAL-*.md` acceptance
-  criteria are satisfied with real evidence.
-- Behavior matches the governing spec's acceptance criteria (in `specs/`
-  or `docs/specs/`).
+- The governing spec's acceptance criteria are satisfied with real evidence.
 - No secrets, customer data, or runtime artifacts (recordings,
   transcripts, `.rendered/`) are tracked by git.
 - `PLANS.md` reflects the final state.
@@ -229,14 +220,9 @@ Work is done only when all of these hold:
 
 - Exactly one short root `PLANS.md` carries live state; rules live in
   `docs/runbooks/plan-rules.md`.
-- Two spec surfaces coexist (see DEC-002):
-  - `specs/` holds the authoritative domain specs, VAL-* contracts,
-    runbooks, and decisions for asterisk, sbc, monitoring, and voicebot.
-    Change proposals go under `specs/changes/NNNN-topic.md`.
-  - `docs/specs/specNN-topic.md` holds cross-cutting harness or
-    programme-level specs, paired with a kickoff prompt under
-    `docs/prompts/`. Use `docs/templates/spec-template.md` and
-    `docs/templates/spec-kickoff-prompt-template.md` as seeds.
+- Specs live under `docs/specs/specNN-topic.md`, created from
+  `docs/templates/spec-template.md` and paired with a kickoff prompt under
+  `docs/prompts/` from `docs/templates/spec-kickoff-prompt-template.md`.
 - Small tasks skip specs entirely: track them through commits and
   `PLANS.md` updates.
 - When a governing spec is complete, archive the current `PLANS.md`

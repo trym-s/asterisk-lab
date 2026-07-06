@@ -13,24 +13,20 @@ Superseded decisions stay here and point to their replacement.
 - **Impact:** Agents must follow the read order and workflow in `AGENTS.md`.
   Changes to the governance model are made in `AGENTS.md` and recorded here.
 
-## DEC-002 - Two spec surfaces coexist: specs/ (domain) and docs/specs/ (cross-cutting)
+## DEC-002 - specs/ decommissioned; docs/specs/ is the single spec surface
 
-- **Decision:** The pre-existing `specs/` tree (`global/`, `domains/{asterisk,
-  sbc,monitoring,voicebot}/`, `changes/`) is the authoritative source of
-  supported behavior, VAL-* acceptance criteria, and durable domain
-  decisions. New cross-cutting, harness-level, or programme-level specs
-  use `docs/specs/specNN-topic.md` per the agent-workflow-template
-  convention, paired with `docs/prompts/`.
-- **Reason:** The existing `specs/` tree is highly developed and its VAL-*
-  based validation model is deeply integrated with the `.claude/agents/`
-  contract-review, scrutiny-validator, and user-testing-validator lanes.
-  Renumbering or migrating it would be pure churn. The AWT `docs/specs/`
-  slot fills a separate need: initiatives that span domains or evolve the
-  harness itself.
-- **Impact:** Agents read `specs/README.md` and `specs/global/agent-routing.md`
-  to pick a domain; they read `docs/specs/` only when `PLANS.md` names a
-  governing cross-cutting spec. `docs/runbooks/spec-rules.md` documents
-  both surfaces.
+- **Decision:** The legacy `specs/` directory (domain contracts, runbooks,
+  decisions) has been decommissioned. All spec work now lives under
+  `docs/specs/specNN-topic.md`, created from `docs/templates/spec-template.md`,
+  paired with a kickoff prompt under `docs/prompts/`. The former dual-surface
+  model (DEC-002 original, 2026-07-06) is superseded by this entry.
+- **Reason:** Two spec surfaces created confusion and maintenance overhead.
+  Consolidating into `docs/specs/` gives a single place to find governing
+  specs and keeps the AGENTS.md read order simpler.
+- **Impact:** Agents read `docs/specs/` when `PLANS.md` names a governing
+  spec. `docs/runbooks/spec-rules.md` documents the single-surface rules.
+  Removed `specs/` exclusions from the Makefile RSYNC_EXCLUDES as the
+  directory no longer exists.
 
 ## DEC-003 - Transcriber dependencies pinned; systemd hardening applied
 
@@ -55,7 +51,7 @@ Superseded decisions stay here and point to their replacement.
 
 - **Decision:** The `RSYNC_EXCLUDES` list in the Makefile excludes `.env`
   (along with `.git/`, `.github/`, `.agents/`, `.claude/`, `.codex/`,
-  `.mcp.json`, AGENTS/README/PROCESS/NOTES, `specs/`, `__pycache__/`,
+  `.mcp.json`, AGENTS/README/PROCESS/NOTES, `__pycache__/`,
   `.rendered/`). Every VM has its own `.env` placed manually.
 - **Reason:** Rsyncing a real `.env` into a VM is a leak surface and
   would silently overwrite per-VM secrets. Deploy must never touch

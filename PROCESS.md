@@ -2,8 +2,8 @@
 
 Operational reference for the Asterisk lab. Current repo layout and install flow only — execution logs and one-off debugging narratives have been dropped.
 
-Spec-driven source of truth lives under `specs/`. Use `specs/README.md` and
-`specs/global/agent-routing.md` before treating any workflow here as current.
+Spec-driven source of truth lives under `docs/specs/`. Use `AGENTS.md` and
+`PLANS.md` before treating any workflow here as current.
 This file is a current-state index, not an acceptance contract.
 
 ## Current Target

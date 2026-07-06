@@ -27,8 +27,7 @@ because they need a live Debian VM.
 - Run the relevant `verify` target on the affected VM before declaring
   work done. Report failures honestly; never weaken a check to make it
   pass.
-- Voicebot changes must also satisfy the affected `specs/domains/voicebot/
-  contracts/VAL-VOICEBOT-*.md` contracts and the parity check in
+- Voicebot changes must also satisfy the parity check in
   `VAL-VOICEBOT-PARITY-001.md`.
 - Live runtime evidence (recordings, transcripts, trace logs) goes under
   ignored `runtime/` on the host or `/var/spool/`, `/var/lib/voicebot/`

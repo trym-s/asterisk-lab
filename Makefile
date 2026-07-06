@@ -19,7 +19,7 @@ DEPLOY_REVISION ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unk
 # rsync exclusions for deploy paths. VMs receive only runtime/install payload.
 # Specs, agent guidance, repo docs, CI config, and secrets stay host/GitHub-side.
 # Place .env manually on each target VM; deploy must never overwrite it.
-RSYNC_EXCLUDES := --exclude='.git/' --exclude='.github/' --exclude='.env' --exclude='.agents/' --exclude='.claude/' --exclude='.codex/' --exclude='.mcp.json' --exclude='AGENTS.md' --exclude='README.md' --exclude='PROCESS.md' --exclude='NOTES.md' --exclude='specs/' --exclude='__pycache__/' --exclude='.rendered/'
+RSYNC_EXCLUDES := --exclude='.git/' --exclude='.github/' --exclude='.env' --exclude='.agents/' --exclude='.claude/' --exclude='.codex/' --exclude='.mcp.json' --exclude='AGENTS.md' --exclude='README.md' --exclude='PROCESS.md' --exclude='NOTES.md' --exclude='__pycache__/' --exclude='.rendered/'
 
 help: ## Show this help
 	@awk 'BEGIN{FS=":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)

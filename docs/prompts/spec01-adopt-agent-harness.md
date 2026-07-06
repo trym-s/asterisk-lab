@@ -8,8 +8,8 @@ docs/specs/spec01-adopt-agent-harness.md
 
 Complete the harness adoption end to end. Do not touch application code
 under `asterisk/`, `sbc/`, `monitoring/`, `services/`, `scripts/`,
-`infra/`, `install.sh`, or `Makefile`. Do not migrate or renumber the
-existing `specs/` domain contract tree.
+`infra/`, `install.sh`, or `Makefile`. The legacy `specs/` directory has
+already been decommissioned; do not reintroduce it.
 
 Concretely:
 

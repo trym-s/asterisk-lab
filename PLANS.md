@@ -6,7 +6,7 @@
 > When the governing spec is complete, archive this file under `docs/archive/plan/`.
 > The next spec starts with a fresh root `PLANS.md` from `docs/templates/PLANS.md`.
 
-**Status:** Active - harness initialization in progress; adoption spec being executed.
+**Status:** Active - specs decommission and directory update in progress.
 **Governing spec:** `docs/specs/spec01-adopt-agent-harness.md`
 **Last updated:** 2026-07-06
 
@@ -23,9 +23,13 @@
 - [x] Fill `docs/runbooks/{local-development,testing,spec-rules}.md` with
       the real check commands and dual-spec discipline.
 - [x] Create `docs/specs/spec01-adopt-agent-harness.md` and its kickoff prompt.
-- [ ] Land the initialization commit (`chore(harness): initialize
+- [x] Land the initialization commit (`chore(harness): initialize
       agent-workflow-template`) after removing `INIT.md` and the empty
       `awt/` directory.
+- [x] Decommission legacy `specs/` directory (domain contracts, runbooks,
+      decisions, changes). Consolidated into `docs/specs/` as the single
+      spec surface. Updated DEC-002 entry.
+- [x] Remove all stale `specs/` references from repository files.
 - [ ] Follow-up: extract more DEC-* entries from git history (LiveKit
       wideband trial, Pipecat AudioSocket lane, monitoring provisioning
       quirks). Tracked as scope inside spec01.
@@ -41,13 +45,17 @@
   governance and operational baselines.
 - `docs/architecture/app-architecture.md` describes the current
   three-VM plus voicebot layout.
+- `specs/` has been decommissioned; `docs/specs/` is the single spec surface.
 
 ## Recent updates
 
 - 2026-07-06 - Harness initialized from agent-workflow-template. AGENTS.md
-  rewritten to 10-section layout; existing `specs/` retained as the
-  authoritative domain contract surface; `docs/specs/spec01` created for
+  rewritten to 10-section layout; `docs/specs/spec01` created for
   the adoption effort itself.
+- 2026-07-06 - `specs/` directory decommissioned. All spec work consolidated
+  under `docs/specs/`. DEC-002 updated. Stale references being cleaned up
+  across AGENTS.md, PROCESS.md, README.md, PLANS.md, spec-rules.md,
+  testing.md, Makefile, `.claude/README.md`, and `.codex/README.md`.
 
 ## Archive pointers
 

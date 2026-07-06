@@ -8,11 +8,9 @@ Read in this order:
 
 1. `AGENTS.md` - agent rulebook, directory ownership, working rules, done criteria.
 2. `PLANS.md` - live execution state.
-3. `specs/README.md` and `specs/global/agent-routing.md` - domain map and routing table.
-4. The selected `specs/domains/<domain>/spec.md`, `runbook.md`, and matching `contracts/VAL-*.md`.
-5. `docs/specs/` - cross-cutting harness or programme-level specs (paired with `docs/prompts/`).
-6. `docs/memory/` - proven decisions and durable facts.
-7. `docs/runbooks/` - operational procedures and plan/spec rules.
+3. `docs/specs/` the governing spec if `PLANS.md` points to one, paired with `docs/prompts/`.
+4. `docs/memory/` - proven decisions and durable facts.
+5. `docs/runbooks/` - operational procedures and plan/spec rules.
 
 This README is human onboarding, not the acceptance contract.
 

@@ -11,18 +11,16 @@
 ## Goal
 
 Bring the existing asterisk-lab repository under the agent-workflow-template
-governance model without discarding the mature `specs/` domain contract
-system, so that every future agent session starts from a single set of rules
-(`AGENTS.md`), a single live state file (`PLANS.md`), and a shared memory
-surface (`docs/memory/`).
+governance model, so that every future agent session starts from a single set
+of rules (`AGENTS.md`), a single live state file (`PLANS.md`), and a shared
+memory surface (`docs/memory/`).
 
 ## Problem Statement
 
 The repository already had:
 
-- a working `AGENTS.md` pointing at `specs/` for domain contracts;
-- a mature `specs/` tree with per-domain specs, runbooks, decisions, and
-  VAL-* acceptance contracts;
+- a working `AGENTS.md` pointing at domain contracts;
+- a mature domain spec, runbook, and VAL-* acceptance contract tree;
 - project-level `.claude/skills/` and `.claude/agents/` roles;
 - a `.mcp.json` with zenith configured and out-of-repo skill stores.
 
@@ -43,9 +41,8 @@ adoption itself.
    governance, the dual spec surface, transcriber pins and hardening,
    the deploy `.env` exclusion, the direction-aware SBC INVITE branch,
    and the external skill store.
-4. Reconcile the two spec surfaces (`specs/` for domains, `docs/specs/`
-   for cross-cutting harness or programme initiatives) and document it
-   in `docs/runbooks/spec-rules.md`.
+4. Reconcile the spec surface under `docs/specs/` and document it in
+   `docs/runbooks/spec-rules.md`.
 5. Wire the git identity, ASCII, and spec-boundary pre-commit hook
    (`.githooks/pre-commit`) with the real project name, and add the
    allowlist for user-facing root files (`README.md`, `PROCESS.md`,
@@ -57,8 +54,8 @@ adoption itself.
 
 ## Non-Goals
 
-- Migrating or renumbering the existing `specs/` tree. Domain contracts
-  keep their current numbers and layout.
+- Migrating or renumbering the existing domain contract tree. Contracts
+  keep their current numbers and layout where preserved.
 - Rewriting the four existing `.claude/agents/*.md` roles.
 - Moving `.agents/skills` and `.codex/skills` from symlinks into in-repo
   copies. DEC-006 documents the current setup.
@@ -67,8 +64,7 @@ adoption itself.
 
 ## Architecture Contract
 
-- Two spec surfaces coexist. `specs/` is authoritative for supported
-  behavior and VAL-* acceptance. `docs/specs/` holds cross-cutting
+- `docs/specs/` holds the governing spec surface for
   harness or programme initiatives; each pairs with a kickoff prompt
   under `docs/prompts/`.
 - Runtime layouts and boundaries are documented in
