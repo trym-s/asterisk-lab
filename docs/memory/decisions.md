@@ -128,3 +128,18 @@ Superseded decisions stay here and point to their replacement.
   `/var/lib/voicebot/*.jsonl` must resolve its own read paths rather than
   importing `default_events_path()` / `LOG_PATH` from `services/common`.
   See `vms/asterisk/services/dashboard/app/config.py` for the pattern.
+
+## DEC-009 - AudioSocket UUID correlation accepts compact and hyphenated forms
+
+- **Decision:** Dashboard recording correlation treats AudioSocket UUIDs as
+  equivalent whether they are logged compact (`32` hex chars) or hyphenated
+  (`8-4-4-4-12`). The recording index stores both lookup keys for the same
+  MixMonitor file.
+- **Reason:** Asterisk recording filenames carry `${UNIQUEID}` and the
+  dashboard derives a hyphenated AudioSocket UUID from that value. The
+  Pipecat lane emits the same AudioSocket UUID in compact form as its
+  `call_id` / `uuid`, so a literal string join misses real recordings even
+  when the ids represent the same value.
+- **Impact:** Future trace readers and correlation code must normalize
+  AudioSocket UUID formatting before comparing values. Do not assume the
+  hyphenated display form is the only serialized form in `events.jsonl`.

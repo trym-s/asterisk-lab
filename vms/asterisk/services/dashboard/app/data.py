@@ -218,6 +218,18 @@ def audiosocket_uuid_for_uniqueid(uniqueid: str) -> str:
     return f"{digest[0:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:32]}"
 
 
+def _uuid_lookup_keys(value: str | None) -> set[str]:
+    if not value:
+        return set()
+    raw = value.strip()
+    keys = {raw}
+    compact = raw.replace("-", "").lower()
+    if len(compact) == 32 and all(char in "0123456789abcdef" for char in compact):
+        keys.add(compact)
+        keys.add(f"{compact[0:8]}-{compact[8:12]}-{compact[12:16]}-{compact[16:20]}-{compact[20:32]}")
+    return keys
+
+
 def parse_recording_name(path: Path) -> dict[str, Any] | None:
     match = RECORDING_RE.match(path.stem)
     if not match:
@@ -243,7 +255,10 @@ def recording_index(monitor_dir: Path | None) -> dict[str, Any]:
             if parsed:
                 recordings.append(parsed)
     by_uniqueid = {row["asterisk_uniqueid"]: row for row in recordings}
-    by_audiosocket_uuid = {row["audiosocket_uuid"]: row for row in recordings}
+    by_audiosocket_uuid = {}
+    for row in recordings:
+        for key in _uuid_lookup_keys(row["audiosocket_uuid"]):
+            by_audiosocket_uuid[key] = row
     return {
         "recordings": recordings,
         "by_uniqueid": by_uniqueid,
@@ -272,8 +287,9 @@ def _match_recording(entry: dict[str, Any], index: dict[str, Any]) -> tuple[dict
         ("call_id_as_audiosocket_uuid", entry["call_id"], index["by_audiosocket_uuid"]),
     ]
     for status, value, lookup in candidates:
-        if value and value in lookup:
-            return lookup[value], status
+        for key in _uuid_lookup_keys(value) or ({value} if value else set()):
+            if key in lookup:
+                return lookup[key], status
     return None, "missing"
 
 

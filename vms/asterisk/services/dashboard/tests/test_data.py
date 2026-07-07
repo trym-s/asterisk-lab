@@ -101,9 +101,11 @@ class ListCallsTest(unittest.TestCase):
             wav.touch()
             txt.write_text("merhaba", encoding="utf-8")
             call_id = data.audiosocket_uuid_for_uniqueid("1751900000.42")
+            compact_call_id = call_id.replace("-", "")
             events = [
                 trace_events.build_event(
-                    lane="pipecat", call_id=call_id, stage="call", event="call.started", ts=1.0,
+                    lane="pipecat", call_id=compact_call_id, stage="call", event="call.started",
+                    ts=1.0, payload={"uuid": compact_call_id},
                 ),
             ]
             calls = data.list_calls(events, monitor, now=2.0)
