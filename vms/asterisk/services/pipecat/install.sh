@@ -5,7 +5,19 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$HERE/../../.." && pwd)"
+find_repo_root() {
+  local dir="$1"
+  while [ "$dir" != "/" ]; do
+    if [ -f "$dir/infra/scripts/lib/env.sh" ]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+    dir="$(dirname "$dir")"
+  done
+  echo "ERROR: could not find repo root from $1" >&2
+  return 1
+}
+REPO_ROOT="$(find_repo_root "$HERE")"
 cd "$REPO_ROOT"
 
 # shellcheck source=/dev/null
@@ -46,6 +58,22 @@ cd "$HERE"
 $SUDO docker compose \
   --env-file "$LAB_ENV_FILE" \
   up -d --build
+
+echo "==> waiting for Pipecat AudioSocket listener"
+ready=0
+for _ in {1..30}; do
+  if ss -ltn "sport = :8090" | grep -q ':8090'; then
+    ready=1
+    break
+  fi
+  sleep 1
+done
+if [ "$ready" != "1" ]; then
+  echo "ERROR: pc-agent is not listening on TCP 127.0.0.1:8090" >&2
+  $SUDO docker compose ps >&2 || true
+  $SUDO docker logs pc-agent --tail=80 >&2 || true
+  exit 1
+fi
 
 echo
 echo "done. Pipecat voicebot stack running. verify:"

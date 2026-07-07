@@ -14,7 +14,19 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$HERE/../../.." && pwd)"
+find_repo_root() {
+  local dir="$1"
+  while [ "$dir" != "/" ]; do
+    if [ -f "$dir/infra/scripts/lib/env.sh" ]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+    dir="$(dirname "$dir")"
+  done
+  echo "ERROR: could not find repo root from $1" >&2
+  return 1
+}
+REPO_ROOT="$(find_repo_root "$HERE")"
 
 TARGET="${1:-${TARGET:-1099}}"
 CTRL_HOST="${CTRL_HOST:-127.0.0.1}"
@@ -106,13 +118,13 @@ done
 # ---- summary --------------------------------------------------------
 echo
 echo "==> local usage delta (last ${#wavs[@]} utterances gen'd earlier)"
-python3 "$REPO_ROOT/services/common/usage_summary.py" \
+python3 "$REPO_ROOT/vms/asterisk/services/common/usage_summary.py" \
   --log "$HOME/.local/state/voicebot/usage.jsonl" --since 1h 2>&1 || true
 
 echo
 echo "==> remote usage delta (LiveKit / Pipecat agent lanes)"
 ssh deb@192.168.122.247 \
-  "python3 /opt/asterisk-lab/current/services/common/usage_summary.py --since 5m" 2>&1 || \
+  "python3 /opt/asterisk-lab/current/vms/asterisk/services/common/usage_summary.py --since 5m" 2>&1 || \
   echo "  (couldn't reach VM — run manually: make usage-summary)"
 
 echo

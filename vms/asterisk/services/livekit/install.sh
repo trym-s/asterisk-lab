@@ -5,7 +5,19 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$HERE/../../.." && pwd)"
+find_repo_root() {
+  local dir="$1"
+  while [ "$dir" != "/" ]; do
+    if [ -f "$dir/infra/scripts/lib/env.sh" ]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+    dir="$(dirname "$dir")"
+  done
+  echo "ERROR: could not find repo root from $1" >&2
+  return 1
+}
+REPO_ROOT="$(find_repo_root "$HERE")"
 cd "$REPO_ROOT"
 
 # shellcheck source=/dev/null
@@ -91,6 +103,15 @@ for _ in {1..30}; do
   if curl -sf http://127.0.0.1:7880/ >/dev/null 2>&1; then break; fi
   sleep 1
 done
+if ! curl -sf http://127.0.0.1:7880/ >/dev/null 2>&1; then
+  echo "ERROR: livekit-server did not become reachable on 127.0.0.1:7880" >&2
+  $SUDO docker compose \
+    -f docker-compose.yml \
+    -f "$RENDERED/docker-compose.override.yml" \
+    ps >&2 || true
+  $SUDO docker logs lk-server --tail=80 >&2 || true
+  exit 1
+fi
 
 # livekit-cli talks to the server over loopback (127.0.0.1:7880 is exposed by
 # livekit-server). --network host so the container reaches the host binding.
@@ -144,6 +165,17 @@ async def main():
 
 asyncio.run(main())
 '
+
+echo "==> checking LiveKit SIP listener"
+if ! ss -lun "sport = :5062" | grep -q ':5062'; then
+  echo "ERROR: livekit-sip is not listening on UDP 127.0.0.1:5062" >&2
+  $SUDO docker compose \
+    -f docker-compose.yml \
+    -f "$RENDERED/docker-compose.override.yml" \
+    ps >&2 || true
+  $SUDO docker logs lk-sip --tail=80 >&2 || true
+  exit 1
+fi
 
 echo
 echo "done. LiveKit voicebot stack running. verify:"
