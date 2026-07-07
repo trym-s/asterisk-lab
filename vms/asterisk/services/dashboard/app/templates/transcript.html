@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Transcript - Voicebot Observability{% endblock %}
+{% block content %}
+<h2 class="page-title mb-3">Turn transcript</h2>
+<div class="mb-3">
+  <label class="form-label">Call</label>
+  <select id="call-select" class="form-select" style="max-width: 28rem;">
+    <option value="">select a call...</option>
+  </select>
+</div>
+<div id="turns-container"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+const params = new URLSearchParams(window.location.search);
+const presetCallId = params.get("call_id") || "";
+let turnsPoller;
+
+function stageBadge(stage, info) {
+  if (!info) return "";
+  const cls = info.source === "measured" ? "latency-measured" : "latency-approx";
+  return `<span class="${cls}">${stage}: ${fmtMs(info.ms)}${info.source === "approx" ? " (approx)" : ""}</span>`;
+}
+
+function renderTurns(data) {
+  const container = document.getElementById("turns-container");
+  if (!data.turns.length) {
+    container.innerHTML = '<div class="text-secondary">No turns for this call yet.</div>';
+    return;
+  }
+  container.innerHTML = data.turns.map(t => `
+    <div class="card mb-2">
+      <div class="card-header">
+        <strong>${t.turn_id}</strong>&nbsp;<span class="text-secondary">${fmtTs(t.start_ts)}</span>
+        <div class="ms-auto d-flex gap-3">
+          ${["stt", "llm", "tts"].map(s => stageBadge(s, t.latency_ms[s])).join(" ")}
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="mb-2"><span class="badge bg-yellow-lt">STT</span> <span class="turn-text">${t.stt_text || "(none)"}</span></div>
+        <div class="mb-2"><span class="badge bg-blue-lt">LLM</span> <span class="turn-text">${t.llm_text || "(none)"}</span></div>
+        <div class="mb-2"><span class="badge bg-green-lt">TTS</span> <span class="turn-text">${t.tts_text || "(none)"}</span></div>
+        ${t.tool_calls.length ? `<div class="mb-2"><span class="badge bg-purple-lt">TOOL</span> ${t.tool_calls.map(tc => `<code>${tc.event}</code>`).join(", ")}</div>` : ""}
+      </div>
+    </div>
+  `).join("");
+}
+
+function loadTurns(callId) {
+  if (turnsPoller) clearInterval(turnsPoller);
+  if (!callId) {
+    document.getElementById("turns-container").innerHTML = "";
+    return;
+  }
+  turnsPoller = pollJson(`/api/turns?call_id=${encodeURIComponent(callId)}`, {{ refresh_s * 1000 }}, renderTurns);
+}
+
+pollJson("/api/calls", {{ refresh_s * 1000 }}, (data) => {
+  const select = document.getElementById("call-select");
+  const current = select.value || presetCallId;
+  select.innerHTML = '<option value="">select a call...</option>' + data.calls.map(c =>
+    `<option value="${c.call_id}" ${c.call_id === current ? "selected" : ""}>${c.lane} / ${c.call_id}</option>`
+  ).join("");
+  if (current && select.value !== current) {
+    // preset call_id not in the current list yet
+    select.value = "";
+  }
+});
+
+document.getElementById("call-select").addEventListener("change", (e) => loadTurns(e.target.value));
+if (presetCallId) loadTurns(presetCallId);
+</script>
+{% endblock %}

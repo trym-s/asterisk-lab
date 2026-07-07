@@ -1,0 +1,13 @@
+[project]
+name = "voicebot-dashboard"
+version = "0.1.0"
+description = "Read-only observability dashboard for the voicebot JSONL sinks"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.139.0",
+    "uvicorn[standard]==0.50.2",
+    "jinja2==3.1.6",
+]
+
+[tool.uv]
+package = false

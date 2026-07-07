@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Parity - Voicebot Observability{% endblock %}
+{% block content %}
+<h2 class="page-title mb-3">LiveKit vs Pipecat parity</h2>
+<div class="row row-deck row-cards mb-3">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-body">
+        <canvas id="latency-chart" height="90"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="card">
+  <div class="table-responsive">
+    <table class="table card-table table-vcenter">
+      <thead>
+        <tr>
+          <th>Lane</th>
+          <th>Calls</th>
+          <th>Turns</th>
+          <th>Avg stt ms</th>
+          <th>Avg llm ms</th>
+          <th>Avg tts ms</th>
+          <th>Est. cost</th>
+        </tr>
+      </thead>
+      <tbody id="parity-body">
+        <tr><td colspan="7" class="text-secondary">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let chart;
+pollJson("/api/parity", {{ refresh_s * 1000 }}, (data) => {
+  const body = document.getElementById("parity-body");
+  if (!data.lanes.length) {
+    body.innerHTML = '<tr><td colspan="7" class="text-secondary">No turns recorded yet.</td></tr>';
+  } else {
+    body.innerHTML = data.lanes.map(l => `
+      <tr>
+        <td><span class="badge bg-blue-lt">${l.lane}</span></td>
+        <td>${l.call_count}</td>
+        <td>${l.turn_count}</td>
+        <td>${fmtMs(l.avg_stage_ms.stt)}</td>
+        <td>${fmtMs(l.avg_stage_ms.llm)}</td>
+        <td>${fmtMs(l.avg_stage_ms.tts)}</td>
+        <td>${fmtUsd(l.estimated_usd)}</td>
+      </tr>
+    `).join("");
+  }
+
+  const labels = data.lanes.map(l => l.lane);
+  const stages = ["stt", "llm", "tts"];
+  const datasets = stages.map(stage => ({
+    label: stage,
+    data: data.lanes.map(l => l.avg_stage_ms[stage] || 0),
+  }));
+  if (!chart) {
+    chart = new Chart(document.getElementById("latency-chart"), {
+      type: "bar",
+      data: { labels, datasets },
+      options: { responsive: true, scales: { y: { beginAtZero: true, title: { display: true, text: "ms (approx unless measured)" } } } },
+    });
+  } else {
+    chart.data.labels = labels;
+    chart.data.datasets = datasets;
+    chart.update();
+  }
+});
+</script>
+{% endblock %}

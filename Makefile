@@ -5,7 +5,7 @@
 # or `make SBC_VM=user@host <target>` for the SBC.
 # or `make MONITORING_VM=user@host <target>` for monitoring.
 # Override the SSH command (e.g. for sshpass) with `make SSH="sshpass -e ssh" <target>`.
-.PHONY: help install verify deploy logs install-sbc verify-sbc deploy-sbc logs-sbc install-monitoring verify-monitoring deploy-monitoring logs-monitoring install-zabbix-agent verify-zabbix-agent deploy-agent-asterisk deploy-agent-sbc clean
+.PHONY: help install verify deploy logs install-sbc verify-sbc deploy-sbc logs-sbc install-monitoring verify-monitoring deploy-monitoring logs-monitoring install-zabbix-agent verify-zabbix-agent deploy-agent-asterisk deploy-agent-sbc install-voicebot-dashboard verify-voicebot-dashboard deploy-voicebot-dashboard logs-voicebot-dashboard clean
 
 SHELL  := /bin/bash
 VM     ?= deb@192.168.122.247
@@ -133,6 +133,22 @@ deploy-voicebot-pipecat: ## rsync Asterisk payload to $(VM), then provision Pipe
 
 logs-voicebot-pipecat: ## Tail Pipecat agent logs on $(VM)
 	$(SSH) $(VM) 'sudo docker logs -f --tail=100 pc-agent 2>&1'
+
+install-voicebot-dashboard: ## Provision the read-only observability dashboard on this host
+	sudo -E ./vms/asterisk/services/dashboard/install.sh
+
+verify-voicebot-dashboard: ## Smoke-check the observability dashboard on this host
+	sudo ./vms/asterisk/services/dashboard/verify.sh
+
+deploy-voicebot-dashboard: ## rsync Asterisk payload to $(VM), then provision the dashboard there
+	$(SSH) $(VM) '$(REMOTE_PREP)'
+	$(RSYNC_TO_VM) --filter='merge infra/deploy/asterisk.filter' ./ $(VM):$(DEPLOY_DIR)/
+	$(SSH) $(VM) '$(REMOTE_ENV_MIGRATE)'
+	$(SSH) $(VM) '$(REMOTE_STAMP)'
+	$(SSH) $(VM) 'cd $(DEPLOY_DIR) && sudo ASTERISK_LAB_ENV=$(LAB_ENV) ./vms/asterisk/services/dashboard/install.sh'
+
+logs-voicebot-dashboard: ## Tail dashboard service logs on $(VM)
+	$(SSH) $(VM) 'sudo journalctl -u voicebot-dashboard -f --no-pager'
 
 gen-utterances: ## Generate test-caller WAVs via ElevenLabs (uses host .env)
 	./vms/asterisk/services/test-caller/gen-utterances.sh

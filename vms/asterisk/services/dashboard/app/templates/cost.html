@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Cost - Voicebot Observability{% endblock %}
+{% block content %}
+<h2 class="page-title mb-3">Cost &amp; usage</h2>
+<div class="mb-3">
+  <label class="form-label">Since</label>
+  <select id="since-select" class="form-select" style="max-width: 12rem;">
+    <option value="">all time</option>
+    <option value="5m">last 5 minutes</option>
+    <option value="30m">last 30 minutes</option>
+    <option value="1h" selected>last 1 hour</option>
+    <option value="1d">last 1 day</option>
+  </select>
+</div>
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="text-secondary">Total estimated cost</div>
+    <div class="h1" id="total-cost">?</div>
+  </div>
+</div>
+<div class="card">
+  <div class="table-responsive">
+    <table class="table card-table table-vcenter">
+      <thead>
+        <tr>
+          <th>Lane</th><th>Provider</th><th>Stage</th><th>Model</th>
+          <th>Op</th><th>Unit</th><th>Events</th><th>Units</th><th>Est. USD</th>
+        </tr>
+      </thead>
+      <tbody id="cost-body">
+        <tr><td colspan="9" class="text-secondary">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let poller;
+function load() {
+  if (poller) clearInterval(poller);
+  const since = document.getElementById("since-select").value;
+  const url = since ? `/api/cost?since=${encodeURIComponent(since)}` : "/api/cost";
+  poller = pollJson(url, {{ refresh_s * 1000 }}, (data) => {
+    document.getElementById("total-cost").textContent = fmtUsd(data.total_usd);
+    const body = document.getElementById("cost-body");
+    if (!data.rows.length) {
+      body.innerHTML = '<tr><td colspan="9" class="text-secondary">No usage recorded yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = data.rows.map(r => `
+      <tr>
+        <td>${r.lane}</td><td>${r.provider}</td><td>${r.stage}</td><td>${r.model}</td>
+        <td>${r.op}</td><td>${r.unit_type}</td><td>${r.events}</td>
+        <td>${r.units.toLocaleString()}</td><td>${fmtUsd(r.estimated_usd)}</td>
+      </tr>
+    `).join("");
+  });
+}
+document.getElementById("since-select").addEventListener("change", load);
+load();
+</script>
+{% endblock %}

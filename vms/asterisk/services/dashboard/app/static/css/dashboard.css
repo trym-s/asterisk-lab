@@ -1,0 +1,3 @@
+.latency-measured { color: var(--tblr-success); font-weight: 600; }
+.latency-approx { color: var(--tblr-secondary); }
+.turn-text { white-space: pre-wrap; }

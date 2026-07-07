@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Overview - Voicebot Observability{% endblock %}
+{% block content %}
+<h2 class="page-title mb-3">Recent calls</h2>
+<div class="card">
+  <div class="table-responsive">
+    <table class="table card-table table-vcenter">
+      <thead>
+        <tr>
+          <th>Lane</th>
+          <th>Call ID</th>
+          <th>Started</th>
+          <th>Ended</th>
+          <th>Turns</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="calls-body">
+        <tr><td colspan="6" class="text-secondary">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+pollJson("/api/calls", {{ refresh_s * 1000 }}, (data) => {
+  const body = document.getElementById("calls-body");
+  if (!data.calls.length) {
+    body.innerHTML = '<tr><td colspan="6" class="text-secondary">No calls recorded yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = data.calls.map(c => `
+    <tr>
+      <td><span class="badge bg-blue-lt">${c.lane}</span></td>
+      <td><code>${c.call_id}</code></td>
+      <td>${fmtTs(c.start_ts)}</td>
+      <td>${fmtTs(c.end_ts)}</td>
+      <td>${c.turn_count}</td>
+      <td><a href="/transcript?call_id=${encodeURIComponent(c.call_id)}">view transcript</a></td>
+    </tr>
+  `).join("");
+});
+</script>
+{% endblock %}
