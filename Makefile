@@ -23,7 +23,7 @@ LAB_ENV ?= /etc/asterisk-lab/env
 DEPLOY_REVISION ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)$(shell test -z "$$(git status --porcelain 2>/dev/null)" || echo -dirty)
 
 # VMs receive role payloads under /opt. Secrets stay in /etc/asterisk-lab/env.
-RSYNC_TO_VM := $(RSYNC) -e "$(RSYNC_SSH)" -av --delete --delete-excluded --rsync-path="sudo rsync"
+RSYNC_TO_VM := $(RSYNC) -e "$(RSYNC_SSH)" -avc --delete --delete-excluded --rsync-path="sudo rsync"
 REMOTE_PREP = sudo install -d -m 0755 $(DEPLOY_DIR) /etc/asterisk-lab
 REMOTE_ENV_MIGRATE = if [ ! -f $(LAB_ENV) ] && [ -f ~/asterisk-lab/.env ]; then sudo install -m 0600 -o root -g root ~/asterisk-lab/.env $(LAB_ENV); fi
 REMOTE_STAMP = printf "%s\n" "$(DEPLOY_REVISION)" | sudo tee $(DEPLOY_DIR)/.deploy-revision >/dev/null

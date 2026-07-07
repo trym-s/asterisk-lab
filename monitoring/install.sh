@@ -118,7 +118,7 @@ $SUDO install -d -m 0750 -o www-data -g www-data /etc/zabbix/web
 # shellcheck disable=SC2016
 ZABBIX_DB_PASSWORD="$ZABBIX_DB_PASSWORD" \
   envsubst '${ZABBIX_DB_PASSWORD}' \
-  < monitoring/zabbix-web.conf.php.tmpl \
+  < monitoring/etc/zabbix/web/zabbix.conf.php.tmpl \
   | $SUDO tee /etc/zabbix/web/zabbix.conf.php >/dev/null
 $SUDO chown www-data:www-data /etc/zabbix/web/zabbix.conf.php
 $SUDO chmod 0640 /etc/zabbix/web/zabbix.conf.php
@@ -141,11 +141,11 @@ if ! "$GRAFANA_CLI" --homepath "$GRAFANA_HOME" plugins ls 2>/dev/null | grep -q 
 fi
 
 echo "==> Grafana datasource + dashboard provisioning"
-$SUDO install -m 0644 monitoring/grafana-datasource-zabbix.yaml /etc/grafana/provisioning/datasources/zabbix.yaml
-$SUDO install -m 0644 monitoring/grafana-dashboard-provider.yaml /etc/grafana/provisioning/dashboards/asterisk-lab.yaml
+$SUDO install -m 0644 monitoring/etc/grafana/provisioning/datasources/zabbix.yaml /etc/grafana/provisioning/datasources/zabbix.yaml
+$SUDO install -m 0644 monitoring/etc/grafana/provisioning/dashboards/asterisk-lab.yaml /etc/grafana/provisioning/dashboards/asterisk-lab.yaml
 $SUDO install -d -m 0755 -o grafana -g grafana /var/lib/grafana/dashboards/asterisk-lab
-$SUDO install -m 0644 -o grafana -g grafana monitoring/grafana-opensips-dashboard.json /var/lib/grafana/dashboards/asterisk-lab/opensips-sbc-overview.json
-$SUDO install -m 0644 -o grafana -g grafana monitoring/grafana-asterisk-dashboard.json /var/lib/grafana/dashboards/asterisk-lab/asterisk-pbx-overview.json
+$SUDO install -m 0644 -o grafana -g grafana monitoring/var/lib/grafana/dashboards/asterisk-lab/opensips-sbc-overview.json /var/lib/grafana/dashboards/asterisk-lab/opensips-sbc-overview.json
+$SUDO install -m 0644 -o grafana -g grafana monitoring/var/lib/grafana/dashboards/asterisk-lab/asterisk-pbx-overview.json /var/lib/grafana/dashboards/asterisk-lab/asterisk-pbx-overview.json
 
 echo "==> enable + restart services"
 $SUDO systemctl daemon-reload

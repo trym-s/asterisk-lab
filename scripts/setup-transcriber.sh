@@ -60,7 +60,7 @@ as_user asterisk env HOME=/var/lib/asterisk XDG_CACHE_HOME=/var/lib/asterisk/.ca
   "$VENV/bin/python" -c "import whisper; whisper.load_model('$MODEL')"
 
 echo "==> systemd unit"
-$SUDO install -m 0644 "$REPO_ROOT/asterisk/transcriber.service" \
+$SUDO install -m 0644 "$REPO_ROOT/asterisk/lib/systemd/system/transcriber.service" \
   /etc/systemd/system/transcriber.service
 
 echo "==> systemd drop-in: WHISPER_MODEL=$MODEL WHISPER_LANGUAGE=${LANGUAGE:-<auto-detect>}"

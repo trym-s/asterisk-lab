@@ -62,11 +62,11 @@ DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y --no-install-recommends 
 # envsubst whitelist is load-bearing: the template uses $du, $rs, $ru, $var(...)
 # pseudo-variables that OpenSIPS expands at runtime. Without the whitelist envsubst
 # would replace those with empty strings and the parser would reject the config.
-echo "==> /etc/opensips/opensips.cfg from sbc/opensips.cfg.tmpl"
+echo "==> /etc/opensips/opensips.cfg from sbc/etc/opensips/opensips.cfg.tmpl"
 # shellcheck disable=SC2016  # envsubst whitelist must be literal, not expanded.
 SBC_IP="$SBC_IP" ASTERISK_IP="$ASTERISK_IP" \
   envsubst '${SBC_IP} ${ASTERISK_IP}' \
-  < sbc/opensips.cfg.tmpl \
+  < sbc/etc/opensips/opensips.cfg.tmpl \
   | $SUDO tee /etc/opensips/opensips.cfg.new >/dev/null
 $SUDO /usr/sbin/opensips -C -f /etc/opensips/opensips.cfg.new >/dev/null
 $SUDO chmod 0644 /etc/opensips/opensips.cfg.new
@@ -82,11 +82,11 @@ if grep -q '^RUN_OPENSIPS=no$' /etc/default/opensips; then
 fi
 
 # ---- 6. render rtpengine.conf from template -------------------------
-echo "==> /etc/rtpengine/rtpengine.conf from sbc/rtpengine.conf.tmpl"
+echo "==> /etc/rtpengine/rtpengine.conf from sbc/etc/rtpengine/rtpengine.conf.tmpl"
 # shellcheck disable=SC2016  # envsubst whitelist must be literal, not expanded.
 SBC_IP="$SBC_IP" \
   envsubst '${SBC_IP}' \
-  < sbc/rtpengine.conf.tmpl \
+  < sbc/etc/rtpengine/rtpengine.conf.tmpl \
   | $SUDO tee /etc/rtpengine/rtpengine.conf.new >/dev/null
 $SUDO chmod 0644 /etc/rtpengine/rtpengine.conf.new
 $SUDO mv /etc/rtpengine/rtpengine.conf.new /etc/rtpengine/rtpengine.conf

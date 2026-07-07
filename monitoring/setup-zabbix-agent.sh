@@ -56,12 +56,12 @@ set_agent_conf ServerActive "$MONITORING_IP" "$agent_conf"
 set_agent_conf Hostname "$ZABBIX_HOSTNAME" "$agent_conf"
 
 $SUDO install -d -m 0755 /etc/zabbix/zabbix_agent2.d
-$SUDO install -m 0755 monitoring/opensips-mi.py /usr/local/bin/opensips-mi-zabbix
-$SUDO install -m 0755 monitoring/asterisk-metrics.py /usr/local/bin/asterisk-metrics
-$SUDO install -m 0755 monitoring/rtpengine-metrics.sh /usr/local/bin/rtpengine-metrics
+$SUDO install -m 0755 monitoring/usr/local/bin/opensips-mi-zabbix /usr/local/bin/opensips-mi-zabbix
+$SUDO install -m 0755 monitoring/usr/local/bin/asterisk-metrics /usr/local/bin/asterisk-metrics
+$SUDO install -m 0755 monitoring/usr/local/bin/rtpengine-metrics /usr/local/bin/rtpengine-metrics
 # shellcheck disable=SC2016
 envsubst '${MONITORING_IP} ${ZABBIX_HOSTNAME}' \
-  < monitoring/zabbix-agent-lab.conf.tmpl \
+  < monitoring/etc/zabbix/zabbix_agent2.d/lab.conf.tmpl \
   | $SUDO tee /etc/zabbix/zabbix_agent2.d/lab.conf >/dev/null
 $SUDO chmod 0644 /etc/zabbix/zabbix_agent2.d/lab.conf
 
