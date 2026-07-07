@@ -23,7 +23,7 @@ if str(COMMON_DIR) not in sys.path:
     sys.path.insert(0, str(COMMON_DIR))
 
 from fastapi import Depends, FastAPI, HTTPException, Request  # noqa: E402
-from fastapi.responses import HTMLResponse  # noqa: E402
+from fastapi.responses import HTMLResponse, RedirectResponse  # noqa: E402
 from fastapi.security import HTTPBasic, HTTPBasicCredentials  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from fastapi.templating import Jinja2Templates  # noqa: E402
@@ -31,6 +31,7 @@ from fastapi.templating import Jinja2Templates  # noqa: E402
 import data  # noqa: E402
 from config import Settings, load_settings  # noqa: E402
 from usage_summary import parse_since  # noqa: E402
+from zabbix_client import ZabbixClient, ZabbixConfig  # noqa: E402
 
 settings = load_settings()
 app = FastAPI(title="Voicebot Observability Dashboard")
@@ -61,57 +62,157 @@ def get_settings() -> Settings:
     return settings
 
 
+def _page_context(request: Request, **extra):
+    context = {
+        "request": request,
+        "refresh_s": settings.refresh_s,
+        "default_range": settings.default_range,
+        "cost_bucket": settings.cost_bucket,
+    }
+    context.update(extra)
+    return context
+
+
+def _since_ts(since: str | None) -> float:
+    return parse_since(since or settings.default_range)
+
+
+def _bucket_s(bucket: str | None) -> int:
+    return data.duration_seconds(bucket or settings.cost_bucket, 3600)
+
+
+def _uptime_payload(since: str | None):
+    client = ZabbixClient(
+        ZabbixConfig(
+            api_url=settings.zabbix_api_url,
+            api_token=settings.zabbix_api_token,
+        )
+    )
+    return client.uptime_summary(_since_ts(since))
+
+
 # ---- page routes ----------------------------------------------------------
 
 
 @app.get("/", response_class=HTMLResponse, dependencies=[Depends(require_auth)])
 def page_overview(request: Request):
+    return templates.TemplateResponse(request, "overview.html", _page_context(request))
+
+
+@app.get("/calls", response_class=HTMLResponse, dependencies=[Depends(require_auth)])
+def page_calls(request: Request):
+    return templates.TemplateResponse(request, "calls.html", _page_context(request))
+
+
+@app.get("/calls/{call_id}", response_class=HTMLResponse, dependencies=[Depends(require_auth)])
+def page_call_detail(request: Request, call_id: str):
     return templates.TemplateResponse(
-        request, "overview.html", {"refresh_s": settings.refresh_s}
+        request,
+        "call_detail.html",
+        _page_context(request, call_id=call_id),
     )
 
 
 @app.get("/parity", response_class=HTMLResponse, dependencies=[Depends(require_auth)])
 def page_parity(request: Request):
-    return templates.TemplateResponse(
-        request, "parity.html", {"refresh_s": settings.refresh_s}
-    )
+    return templates.TemplateResponse(request, "parity.html", _page_context(request))
 
 
 @app.get("/cost", response_class=HTMLResponse, dependencies=[Depends(require_auth)])
 def page_cost(request: Request):
-    return templates.TemplateResponse(
-        request, "cost.html", {"refresh_s": settings.refresh_s}
-    )
+    return templates.TemplateResponse(request, "cost.html", _page_context(request))
 
 
 @app.get("/transcript", response_class=HTMLResponse, dependencies=[Depends(require_auth)])
 def page_transcript(request: Request):
-    return templates.TemplateResponse(
-        request, "transcript.html", {"refresh_s": settings.refresh_s}
-    )
+    call_id = request.query_params.get("call_id")
+    if call_id:
+        return RedirectResponse(f"/calls/{call_id}", status_code=307)
+    return RedirectResponse("/calls", status_code=307)
 
 
 @app.get("/transcriber", response_class=HTMLResponse, dependencies=[Depends(require_auth)])
 def page_transcriber(request: Request):
-    return templates.TemplateResponse(
-        request, "transcriber.html", {"refresh_s": settings.refresh_s}
-    )
+    return templates.TemplateResponse(request, "transcriber.html", _page_context(request))
 
 
 # ---- JSON API --------------------------------------------------------------
 
 
-@app.get("/api/calls", dependencies=[Depends(require_auth)])
-def api_calls():
+@app.get("/api/overview", dependencies=[Depends(require_auth)])
+def api_overview(since: str | None = None):
     events = data.load_events(settings.events_path)
-    return {"calls": data.list_calls(events)}
+    usage_rows = data.load_usage(settings.usage_path)
+    calls = data.list_calls(
+        events,
+        settings.monitor_dir,
+        active_stale_s=settings.active_call_stale_s,
+    )
+    active_calls = [call for call in calls if call["in_progress"]]
+    return {
+        "range": since or settings.default_range,
+        "cost": data.cost_summary(usage_rows, _since_ts(since)),
+        "active_calls": {
+            "count": len(active_calls),
+            "calls": active_calls[:8],
+        },
+        "extensions": data.extension_status(settings.asterisk_cli),
+        "uptime": _uptime_payload(since),
+        "recent_calls": calls[:8],
+    }
+
+
+@app.get("/api/extensions", dependencies=[Depends(require_auth)])
+def api_extensions():
+    return data.extension_status(settings.asterisk_cli)
+
+
+@app.get("/api/uptime", dependencies=[Depends(require_auth)])
+def api_uptime(since: str | None = None):
+    return _uptime_payload(since)
+
+
+@app.get("/api/calls", dependencies=[Depends(require_auth)])
+def api_calls(status: str | None = None):
+    events = data.load_events(settings.events_path)
+    calls = data.list_calls(
+        events,
+        settings.monitor_dir,
+        active_stale_s=settings.active_call_stale_s,
+    )
+    if status == "in-progress":
+        calls = [call for call in calls if call["in_progress"]]
+    return {"calls": calls}
 
 
 @app.get("/api/turns", dependencies=[Depends(require_auth)])
 def api_turns(call_id: str):
     events = data.load_events(settings.events_path)
-    return {"call_id": call_id, "turns": data.turns_for_call(events, call_id)}
+    return {
+        "call_id": call_id,
+        "call": data.call_summary(
+            events,
+            call_id,
+            settings.monitor_dir,
+            active_stale_s=settings.active_call_stale_s,
+        ),
+        "turns": data.turns_for_call(events, call_id),
+    }
+
+
+@app.get("/api/calls/{call_id}/turns", dependencies=[Depends(require_auth)])
+def api_call_turns(call_id: str):
+    events = data.load_events(settings.events_path)
+    return {
+        "call_id": call_id,
+        "call": data.call_summary(
+            events,
+            call_id,
+            settings.monitor_dir,
+            active_stale_s=settings.active_call_stale_s,
+        ),
+        "turns": data.turns_for_call(events, call_id),
+    }
 
 
 @app.get("/api/parity", dependencies=[Depends(require_auth)])
@@ -124,8 +225,13 @@ def api_parity():
 @app.get("/api/cost", dependencies=[Depends(require_auth)])
 def api_cost(since: str | None = None):
     usage_rows = data.load_usage(settings.usage_path)
-    since_ts = parse_since(since) if since else 0
-    return data.cost_summary(usage_rows, since_ts)
+    return data.cost_summary(usage_rows, _since_ts(since) if since else 0)
+
+
+@app.get("/api/cost/timeseries", dependencies=[Depends(require_auth)])
+def api_cost_timeseries(since: str | None = None, bucket: str | None = None):
+    usage_rows = data.load_usage(settings.usage_path)
+    return data.cost_timeseries(usage_rows, _since_ts(since), _bucket_s(bucket))
 
 
 @app.get("/api/transcriber", dependencies=[Depends(require_auth)])

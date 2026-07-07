@@ -52,10 +52,15 @@ exten => 1098,1,NoOp(Voicebot Pipecat: ${CALLERID(num)} -> AudioSocket)
 exten => 1099,1,NoOp(Voicebot LiveKit: ${CALLERID(num)} -> LK SIP GW)
  same => n,Set(RECORDING_FILE=${MONITOR_DIR}/${STRFTIME(${EPOCH},,%Y%m%d-%H%M%S)}-${CALLERID(num)}-lk-${UNIQUEID}.wav)
  same => n,MixMonitor(${RECORDING_FILE})
- same => n,Dial(PJSIP/1099@livekit-trunk,60)
+ same => n,Dial(PJSIP/1099@livekit-trunk,60,b(add-voicebot-headers^s^1(${UNIQUEID},${CHANNEL(name)})))
  same => n,Hangup()
 
 exten => h,1,NoOp(Call ended. Recording file was ${RECORDING_FILE})
+
+[add-voicebot-headers]
+exten => s,1,Set(PJSIP_HEADER(add,X-Asterisk-Uniqueid)=${ARG1})
+ same => n,Set(PJSIP_HEADER(add,X-Asterisk-Channel)=${ARG2})
+ same => n,Return()
 
 ; Outbound context for the LiveKit trunk. Kept empty on purpose: the trunk
 ; never originates calls back into Asterisk in this lab. Present so

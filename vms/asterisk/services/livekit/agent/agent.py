@@ -117,6 +117,49 @@ def _message_payload(messages) -> list[dict]:
     return rows
 
 
+def _extract_participant_correlation(participant, room_name: str) -> dict:
+    attrs = getattr(participant, "attributes", None) or {}
+    identity = getattr(participant, "identity", None)
+    selected: dict[str, str] = {}
+    for key, value in attrs.items():
+        key_s = str(key)
+        lower = key_s.lower()
+        if "asterisk" in lower or lower.startswith("sip."):
+            selected[key_s] = str(value)
+
+    def first_attr(*names: str) -> str | None:
+        wanted = {name.lower() for name in names}
+        for key, value in attrs.items():
+            normalized = str(key).lower().replace("_", "-")
+            if normalized in wanted:
+                return str(value)
+        return None
+
+    uniqueid = first_attr(
+        "x-asterisk-uniqueid",
+        "sip.h.x-asterisk-uniqueid",
+        "sip.headers.x-asterisk-uniqueid",
+        "asterisk_uniqueid",
+    )
+    channel = first_attr(
+        "x-asterisk-channel",
+        "sip.h.x-asterisk-channel",
+        "sip.headers.x-asterisk-channel",
+        "asterisk_channel",
+    )
+    payload = {
+        "room": room_name,
+        "participant": identity,
+        "correlation_status": "matched" if uniqueid else "missing",
+        "sip_attributes": selected,
+    }
+    if uniqueid:
+        payload["asterisk_uniqueid"] = uniqueid
+    if channel:
+        payload["asterisk_channel"] = channel
+    return payload
+
+
 class LabTools(llm.FunctionContext):
     def __init__(self, call_ctx: trace_events.CallContext):
         super().__init__()
@@ -213,6 +256,33 @@ async def entrypoint(ctx: JobContext) -> None:
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
     join_ms = int((time.monotonic() - t_join) * 1000)
     call_ctx = trace_events.CallContext(LANE, ctx.room.name)
+    call_ended_recorded = False
+
+    def record_call_ended(reason: str) -> None:
+        nonlocal call_ended_recorded
+        if call_ended_recorded:
+            return
+        call_ended_recorded = True
+        _trace(
+            lane=LANE,
+            call_id=call_ctx.call_id,
+            stage="call",
+            event="call.ended",
+            provider="livekit",
+            payload={"room": ctx.room.name, "reason": reason},
+        )
+
+    try:
+        @ctx.room.on("participant_disconnected")
+        def _participant_disconnected(_participant) -> None:
+            record_call_ended("participant_disconnected")
+
+        @ctx.room.on("disconnected")
+        def _room_disconnected(*_args) -> None:
+            record_call_ended("room_disconnected")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("livekit disconnect hook registration failed: %s", e)
+
     logger.info("joined room=%s join_ms=%d", ctx.room.name, join_ms)
     _trace(
         lane=LANE,
@@ -488,13 +558,22 @@ async def entrypoint(ctx: JobContext) -> None:
             logger.warning("usage record failed: %s (metrics=%s)", e, cls)
 
     participant = await ctx.wait_for_participant()
+    correlation_payload = _extract_participant_correlation(participant, ctx.room.name)
+    _trace(
+        lane=LANE,
+        call_id=call_ctx.call_id,
+        stage="call",
+        event="call.correlation",
+        provider="livekit",
+        payload=correlation_payload,
+    )
     _trace(
         lane=LANE,
         call_id=call_ctx.call_id,
         stage="audio",
         event="participant.attached",
         provider="livekit",
-        payload={"participant": getattr(participant, "identity", None)},
+        payload=correlation_payload,
     )
     agent.start(ctx.room, participant)
     _trace(

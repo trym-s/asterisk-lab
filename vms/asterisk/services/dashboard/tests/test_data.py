@@ -13,6 +13,7 @@ for path in (APP_DIR, COMMON_DIR):
 
 import data  # noqa: E402
 import trace_events  # noqa: E402
+import zabbix_client  # noqa: E402
 
 
 def _write_events(path: Path, rows: list[dict]) -> None:
@@ -77,6 +78,51 @@ class ListCallsTest(unittest.TestCase):
         self.assertEqual(by_id["c1"]["turn_count"], 2)
         self.assertEqual(by_id["c2"]["turn_count"], 1)
 
+    def test_marks_recent_started_call_in_progress_and_stales_legacy_rows(self) -> None:
+        events = [
+            trace_events.build_event(
+                lane="livekit", call_id="live", stage="call", event="call.started", ts=100.0,
+            ),
+            trace_events.build_event(
+                lane="pipecat", call_id="old", stage="call", event="call.started", ts=1.0,
+            ),
+        ]
+        calls = data.list_calls(events, now=130.0, active_stale_s=60)
+        by_id = {c["call_id"]: c for c in calls}
+        self.assertTrue(by_id["live"]["in_progress"])
+        self.assertFalse(by_id["old"]["in_progress"])
+        self.assertTrue(by_id["old"]["stale_without_end"])
+
+    def test_correlates_audiosocket_uuid_to_mixmonitor_recording(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            monitor = Path(tmp)
+            wav = monitor / "20260707-120000-1001-pc-1751900000.42.wav"
+            txt = monitor / "20260707-120000-1001-pc-1751900000.42.txt"
+            wav.touch()
+            txt.write_text("merhaba", encoding="utf-8")
+            call_id = data.audiosocket_uuid_for_uniqueid("1751900000.42")
+            events = [
+                trace_events.build_event(
+                    lane="pipecat", call_id=call_id, stage="call", event="call.started", ts=1.0,
+                ),
+            ]
+            calls = data.list_calls(events, monitor, now=2.0)
+            self.assertEqual(calls[0]["recording_file"], wav.name)
+            self.assertTrue(calls[0]["batch_transcript"])
+            self.assertEqual(calls[0]["correlation_status"], "matched")
+
+    def test_live_transcript_badge_detects_stt_final_transcript(self) -> None:
+        events = [
+            trace_events.build_event(
+                lane="livekit", call_id="c1", stage="call", event="call.started", ts=1.0,
+            ),
+            trace_events.build_event(
+                lane="livekit", call_id="c1", turn_id="t1", stage="stt",
+                event="final_transcript", ts=2.0, payload={"text": "merhaba"},
+            ),
+        ]
+        self.assertTrue(data.list_calls(events, now=3.0)[0]["live_transcript"])
+
 
 class CostSummaryTest(unittest.TestCase):
     def test_falls_back_to_price_table_when_no_estimate_present(self) -> None:
@@ -100,6 +146,43 @@ class CostSummaryTest(unittest.TestCase):
         self.assertEqual(len(summary["rows"]), 1)
         self.assertEqual(summary["rows"][0]["events"], 1)
 
+    def test_cost_timeseries_buckets_and_drilldown_by_lane(self) -> None:
+        rows = [
+            {
+                "ts": 10.0, "provider": "openai", "op": "tts", "units": 100.0,
+                "unit_type": "chars", "lane": "livekit", "stage": "tts",
+                "model": "tts-1", "estimated_usd": 0.001,
+            },
+            {
+                "ts": 65.0, "provider": "openai", "op": "tts", "units": 200.0,
+                "unit_type": "chars", "lane": "pipecat", "stage": "tts",
+                "model": "tts-1", "estimated_usd": 0.002,
+            },
+        ]
+        series = data.cost_timeseries(rows, since_ts=0, bucket_s=60)
+        self.assertEqual([p["start_ts"] for p in series["points"]], [0, 60])
+        self.assertAlmostEqual(series["total_usd"], 0.003)
+        self.assertEqual([row["lane"] for row in series["drilldown"]], ["livekit", "pipecat"])
+
+
+class ExtensionStatusTest(unittest.TestCase):
+    def test_parse_pjsip_endpoints_lists_registered_extensions(self) -> None:
+        output = """
+ Endpoint:  1001                                         Not in use    0 of inf
+     InAuth:  1001/1001
+        Aor:  1001                                       1
+      Contact:  1001/sip:1001@192.0.2.10:5555            Avail        13.4
+ Endpoint:  1002                                         Unavailable   0 of inf
+        Aor:  1002                                       1
+ Endpoint:  livekit-trunk                                Not in use    0 of inf
+        """
+        status = data.parse_pjsip_endpoints(output)
+        self.assertEqual(status["total"], 2)
+        self.assertEqual(status["registered"], 1)
+        by_ext = {row["extension"]: row for row in status["extensions"]}
+        self.assertTrue(by_ext["1001"]["registered"])
+        self.assertFalse(by_ext["1002"]["registered"])
+
 
 class TranscriberStatusTest(unittest.TestCase):
     def test_pairs_wav_with_sibling_txt(self) -> None:
@@ -114,6 +197,14 @@ class TranscriberStatusTest(unittest.TestCase):
             by_file = {r["file"]: r["transcribed"] for r in status["recordings"]}
             self.assertFalse(by_file["a.wav"])
             self.assertTrue(by_file["b.txt".replace(".txt", ".wav")])
+
+
+class ZabbixClientTest(unittest.TestCase):
+    def test_unavailable_summary_keeps_host_rows(self) -> None:
+        summary = zabbix_client.unavailable_summary("missing token")
+        self.assertFalse(summary["available"])
+        self.assertEqual(len(summary["hosts"]), 3)
+        self.assertEqual({row["status"] for row in summary["hosts"]}, {"unavailable"})
 
 
 if __name__ == "__main__":

@@ -31,10 +31,16 @@ class Settings:
     bind: str
     port: int
     refresh_s: int
+    default_range: str
+    cost_bucket: str
+    active_call_stale_s: int
+    asterisk_cli: str
     events_path: Path
     usage_path: Path
     turns_path: Path
     monitor_dir: Path
+    zabbix_api_url: str | None
+    zabbix_api_token: str | None
     basic_auth_user: str | None
     basic_auth_password: str | None
 
@@ -46,10 +52,16 @@ def load_settings() -> Settings:
         bind=os.environ.get("VOICEBOT_DASHBOARD_BIND", "127.0.0.1"),
         port=int(os.environ.get("VOICEBOT_DASHBOARD_PORT", "8099")),
         refresh_s=int(os.environ.get("VOICEBOT_DASHBOARD_REFRESH_S", "5")),
+        default_range=os.environ.get("VOICEBOT_DASHBOARD_DEFAULT_RANGE", "1h"),
+        cost_bucket=os.environ.get("VOICEBOT_DASHBOARD_COST_BUCKET", "1h"),
+        active_call_stale_s=int(os.environ.get("VOICEBOT_DASHBOARD_ACTIVE_CALL_STALE_S", "120")),
+        asterisk_cli=os.environ.get("VOICEBOT_DASHBOARD_ASTERISK_CLI", "asterisk"),
         events_path=_resolve_path("VOICEBOT_EVENTS_LOG", DEFAULT_EVENTS_LOG),
         usage_path=_resolve_path("VOICEBOT_USAGE_LOG", DEFAULT_USAGE_LOG),
         turns_path=_resolve_path("VOICEBOT_TURNS_LOG", DEFAULT_TURNS_LOG),
         monitor_dir=_resolve_path("VOICEBOT_MONITOR_DIR", DEFAULT_MONITOR_DIR),
+        zabbix_api_url=os.environ.get("VOICEBOT_DASHBOARD_ZABBIX_API_URL") or None,
+        zabbix_api_token=os.environ.get("VOICEBOT_DASHBOARD_ZABBIX_API_TOKEN") or None,
         basic_auth_user=basic_auth_user,
         basic_auth_password=basic_auth_password,
     )

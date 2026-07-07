@@ -1,69 +1,81 @@
 {% extends "base.html" %}
-{% block title %}Parity - Voicebot Observability{% endblock %}
+{% block title %}Parity - Voicebot Console{% endblock %}
 {% block content %}
-<h2 class="page-title mb-3">LiveKit vs Pipecat parity</h2>
-<div class="row row-deck row-cards mb-3">
-  <div class="col-12">
-    <div class="card">
-      <div class="card-body">
-        <canvas id="latency-chart" height="90"></canvas>
-      </div>
-    </div>
+<div class="console-page-head">
+  <div>
+    <div class="eyebrow">Lane comparison</div>
+    <h1 class="page-title">LiveKit vs Pipecat</h1>
   </div>
 </div>
-<div class="card">
+
+<section class="console-panel mb-3">
+  <div class="panel-head">
+    <h2>Average stage latency</h2>
+    <span class="panel-kicker">approx unless measured</span>
+  </div>
+  <canvas id="latency-chart" height="90"></canvas>
+</section>
+
+<section class="console-panel">
+  <div class="panel-head">
+    <h2>Lane totals</h2>
+    <span class="panel-kicker" id="parity-kicker">polling</span>
+  </div>
   <div class="table-responsive">
-    <table class="table card-table table-vcenter">
+    <table class="table console-table">
       <thead>
         <tr>
           <th>Lane</th>
           <th>Calls</th>
           <th>Turns</th>
-          <th>Avg stt ms</th>
-          <th>Avg llm ms</th>
-          <th>Avg tts ms</th>
+          <th>Avg STT</th>
+          <th>Avg LLM</th>
+          <th>Avg TTS</th>
           <th>Est. cost</th>
         </tr>
       </thead>
       <tbody id="parity-body">
-        <tr><td colspan="7" class="text-secondary">Loading...</td></tr>
+        <tr><td colspan="7" class="muted-cell">Loading...</td></tr>
       </tbody>
     </table>
   </div>
-</div>
+</section>
 {% endblock %}
 {% block scripts %}
 <script>
 let chart;
 pollJson("/api/parity", {{ refresh_s * 1000 }}, (data) => {
   const body = document.getElementById("parity-body");
+  document.getElementById("parity-kicker").textContent = `${data.lanes.length} lanes`;
   if (!data.lanes.length) {
-    body.innerHTML = '<tr><td colspan="7" class="text-secondary">No turns recorded yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" class="muted-cell">No turns recorded yet.</td></tr>';
   } else {
-    body.innerHTML = data.lanes.map(l => `
+    body.innerHTML = data.lanes.map(lane => `
       <tr>
-        <td><span class="badge bg-blue-lt">${l.lane}</span></td>
-        <td>${l.call_count}</td>
-        <td>${l.turn_count}</td>
-        <td>${fmtMs(l.avg_stage_ms.stt)}</td>
-        <td>${fmtMs(l.avg_stage_ms.llm)}</td>
-        <td>${fmtMs(l.avg_stage_ms.tts)}</td>
-        <td>${fmtUsd(l.estimated_usd)}</td>
+        <td>${laneBadge(lane.lane)}</td>
+        <td>${lane.call_count}</td>
+        <td>${lane.turn_count}</td>
+        <td>${fmtMs(lane.avg_stage_ms.stt)}</td>
+        <td>${fmtMs(lane.avg_stage_ms.llm)}</td>
+        <td>${fmtMs(lane.avg_stage_ms.tts)}</td>
+        <td>${fmtUsd(lane.estimated_usd)}</td>
       </tr>
     `).join("");
   }
 
-  const labels = data.lanes.map(l => l.lane);
+  const labels = data.lanes.map(lane => lane.lane);
   const stages = ["stt", "llm", "tts"];
-  const datasets = stages.map(stage => ({
-    label: stage,
-    data: data.lanes.map(l => l.avg_stage_ms[stage] || 0),
+  const datasets = stages.map((stage, index) => ({
+    label: stage.toUpperCase(),
+    data: data.lanes.map(lane => lane.avg_stage_ms[stage] || 0),
+    backgroundColor: ["#6e8bff", "#21a89a", "#f0a23a"][index],
+    borderColor: ["#6e8bff", "#21a89a", "#f0a23a"][index],
   }));
   if (!chart) {
     chart = new Chart(document.getElementById("latency-chart"), {
       type: "bar",
       data: { labels, datasets },
-      options: { responsive: true, scales: { y: { beginAtZero: true, title: { display: true, text: "ms (approx unless measured)" } } } },
+      options: consoleChartOptions("ms"),
     });
   } else {
     chart.data.labels = labels;

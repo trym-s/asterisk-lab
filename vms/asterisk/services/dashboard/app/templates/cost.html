@@ -1,63 +1,143 @@
 {% extends "base.html" %}
-{% block title %}Cost - Voicebot Observability{% endblock %}
+{% block title %}Cost - Voicebot Console{% endblock %}
 {% block content %}
-<h2 class="page-title mb-3">Cost &amp; usage</h2>
-<div class="mb-3">
-  <label class="form-label">Since</label>
-  <select id="since-select" class="form-select" style="max-width: 12rem;">
-    <option value="">all time</option>
-    <option value="5m">last 5 minutes</option>
-    <option value="30m">last 30 minutes</option>
-    <option value="1h" selected>last 1 hour</option>
-    <option value="1d">last 1 day</option>
-  </select>
-</div>
-<div class="card mb-3">
-  <div class="card-body">
-    <div class="text-secondary">Total estimated cost</div>
-    <div class="h1" id="total-cost">?</div>
+<div class="console-page-head">
+  <div>
+    <div class="eyebrow">Usage log / estimated spend</div>
+    <h1 class="page-title">Cost</h1>
+  </div>
+  <div class="control-strip">
+    <label for="since-select">Range</label>
+    <select id="since-select" class="form-select form-select-sm">
+      <option value="5m">5m</option>
+      <option value="30m">30m</option>
+      <option value="1h" selected>1h</option>
+      <option value="1d">1d</option>
+    </select>
+    <label for="bucket-select">Bucket</label>
+    <select id="bucket-select" class="form-select form-select-sm">
+      <option value="5m">5m</option>
+      <option value="30m">30m</option>
+      <option value="1h" selected>1h</option>
+      <option value="1d">1d</option>
+    </select>
   </div>
 </div>
-<div class="card">
-  <div class="table-responsive">
-    <table class="table card-table table-vcenter">
-      <thead>
-        <tr>
-          <th>Lane</th><th>Provider</th><th>Stage</th><th>Model</th>
-          <th>Op</th><th>Unit</th><th>Events</th><th>Units</th><th>Est. USD</th>
-        </tr>
-      </thead>
-      <tbody id="cost-body">
-        <tr><td colspan="9" class="text-secondary">Loading...</td></tr>
-      </tbody>
-    </table>
+
+<div class="kpi-grid kpi-grid-compact">
+  <div class="kpi-tile">
+    <span class="kpi-label">Total estimated</span>
+    <strong id="total-cost">?</strong>
+    <span class="kpi-foot" id="total-cost-foot">selected range</span>
+  </div>
+  <div class="kpi-tile">
+    <span class="kpi-label">Buckets</span>
+    <strong id="bucket-count">?</strong>
+    <span class="kpi-foot">trend points</span>
   </div>
 </div>
+
+<section class="console-panel mb-3">
+  <div class="panel-head">
+    <h2>Cost trend</h2>
+    <span class="panel-kicker">usage.jsonl</span>
+  </div>
+  <canvas id="cost-chart" height="92"></canvas>
+</section>
+
+<section class="console-panel">
+  <div class="panel-head">
+    <h2>Lane drill-down</h2>
+    <span class="panel-kicker" id="drilldown-kicker">loading</span>
+  </div>
+  <div id="cost-drilldown" class="drilldown"></div>
+</section>
 {% endblock %}
 {% block scripts %}
 <script>
+const sinceSelect = document.getElementById("since-select");
+const bucketSelect = document.getElementById("bucket-select");
+sinceSelect.value = "{{ default_range }}";
+bucketSelect.value = "{{ cost_bucket }}";
 let poller;
-function load() {
-  if (poller) clearInterval(poller);
-  const since = document.getElementById("since-select").value;
-  const url = since ? `/api/cost?since=${encodeURIComponent(since)}` : "/api/cost";
-  poller = pollJson(url, {{ refresh_s * 1000 }}, (data) => {
-    document.getElementById("total-cost").textContent = fmtUsd(data.total_usd);
-    const body = document.getElementById("cost-body");
-    if (!data.rows.length) {
-      body.innerHTML = '<tr><td colspan="9" class="text-secondary">No usage recorded yet.</td></tr>';
-      return;
-    }
-    body.innerHTML = data.rows.map(r => `
-      <tr>
-        <td>${r.lane}</td><td>${r.provider}</td><td>${r.stage}</td><td>${r.model}</td>
-        <td>${r.op}</td><td>${r.unit_type}</td><td>${r.events}</td>
-        <td>${r.units.toLocaleString()}</td><td>${fmtUsd(r.estimated_usd)}</td>
-      </tr>
-    `).join("");
+let costChart;
+
+function renderCost(data) {
+  document.getElementById("total-cost").textContent = fmtUsd(data.total_usd);
+  document.getElementById("total-cost-foot").textContent = sinceSelect.value;
+  document.getElementById("bucket-count").textContent = data.points.length;
+  const labels = data.points.map(point => fmtShortTs(point.start_ts));
+  const livekit = data.points.map(point => point.by_lane.livekit || 0);
+  const pipecat = data.points.map(point => point.by_lane.pipecat || 0);
+  const other = data.points.map(point => {
+    return Object.entries(point.by_lane)
+      .filter(([lane]) => lane !== "livekit" && lane !== "pipecat")
+      .reduce((sum, [, value]) => sum + value, 0);
   });
+
+  if (!costChart) {
+    costChart = new Chart(document.getElementById("cost-chart"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          chartDataset("LiveKit", livekit, laneColor("livekit")),
+          chartDataset("Pipecat", pipecat, laneColor("pipecat")),
+          chartDataset("Other", other, "#64748b"),
+        ],
+      },
+      options: consoleChartOptions("USD"),
+    });
+  } else {
+    costChart.data.labels = labels;
+    costChart.data.datasets[0].data = livekit;
+    costChart.data.datasets[1].data = pipecat;
+    costChart.data.datasets[2].data = other;
+    costChart.update();
+  }
+
+  document.getElementById("drilldown-kicker").textContent = `${data.drilldown.length} lanes`;
+  const drilldown = document.getElementById("cost-drilldown");
+  drilldown.innerHTML = data.drilldown.length ? data.drilldown.map(group => `
+    <details class="drilldown-group" open>
+      <summary>
+        ${laneBadge(group.lane)}
+        <strong>${fmtUsd(group.estimated_usd)}</strong>
+        <span>${group.events} events</span>
+      </summary>
+      <div class="table-responsive">
+        <table class="table console-table">
+          <thead><tr><th>Provider</th><th>Stage</th><th>Model</th><th>Op</th><th>Unit</th><th>Events</th><th>Units</th><th>USD</th></tr></thead>
+          <tbody>
+            ${group.children.map(row => `
+              <tr>
+                <td>${escapeHtml(row.provider)}</td>
+                <td>${escapeHtml(row.stage)}</td>
+                <td>${escapeHtml(row.model)}</td>
+                <td>${escapeHtml(row.op)}</td>
+                <td>${escapeHtml(row.unit_type)}</td>
+                <td>${row.events}</td>
+                <td>${Number(row.units).toLocaleString()}</td>
+                <td>${fmtUsd(row.estimated_usd)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  `).join("") : '<div class="empty-state">No usage recorded in this range.</div>';
 }
-document.getElementById("since-select").addEventListener("change", load);
-load();
+
+function loadCost() {
+  if (poller) clearInterval(poller);
+  const since = sinceSelect.value;
+  const bucket = bucketSelect.value;
+  const url = `/api/cost/timeseries?since=${encodeURIComponent(since)}&bucket=${encodeURIComponent(bucket)}`;
+  poller = pollJson(url, {{ refresh_s * 1000 }}, renderCost);
+}
+
+sinceSelect.addEventListener("change", loadCost);
+bucketSelect.addEventListener("change", loadCost);
+loadCost();
 </script>
 {% endblock %}

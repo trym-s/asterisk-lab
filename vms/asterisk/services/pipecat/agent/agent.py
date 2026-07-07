@@ -169,7 +169,13 @@ def _record_audiosocket_closed(session: AudioSocketSession, call_ctx: trace_even
         stage="call",
         event="call.ended",
         provider="asterisk-audiosocket",
-        payload={"uuid": session.uuid, "audio": stats},
+        payload={
+            "uuid": session.uuid,
+            "asterisk_audiosocket_uuid": session.uuid,
+            "asterisk_uniqueid": session.uuid,
+            "correlation_status": "audiosocket_uuid",
+            "audio": stats,
+        },
     )
 
 
@@ -693,7 +699,13 @@ async def on_session(session: AudioSocketSession) -> None:
         stage="call",
         event="call.started",
         provider="asterisk-audiosocket",
-        payload={"uuid": session.uuid, "listener": "0.0.0.0:8090"},
+        payload={
+            "uuid": session.uuid,
+            "asterisk_audiosocket_uuid": session.uuid,
+            "asterisk_uniqueid": session.uuid,
+            "correlation_status": "audiosocket_uuid",
+            "listener": "0.0.0.0:8090",
+        },
     )
     _trace(
         lane=LANE,

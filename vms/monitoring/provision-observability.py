@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Provision lab Zabbix hosts and items for SBC + Asterisk observability."""
+"""Provision lab Zabbix hosts and items for lab observability."""
 from __future__ import annotations
 
 import json
@@ -18,6 +18,10 @@ SBC_IP = os.environ.get("SBC_IP", "192.168.122.3")
 ASTERISK_HOST = os.environ.get("ASTERISK_ZABBIX_HOST", "asterisk-deb13-cloudinit")
 ASTERISK_VISIBLE = "Asterisk PBX"
 ASTERISK_IP = os.environ.get("ASTERISK_IP", "192.168.122.247")
+
+MONITORING_HOST = os.environ.get("MONITORING_ZABBIX_HOST", "monitoring-deb13-cloudinit")
+MONITORING_VISIBLE = "Monitoring"
+MONITORING_IP = os.environ.get("MONITORING_IP", "127.0.0.1")
 
 
 def zbx(method: str, params: object, auth: str | None = None) -> object:
@@ -139,20 +143,41 @@ ASTERISK_ITEMS = [
     ("Transcriber service active", "lab.systemd.active[transcriber]"),
 ]
 
+HOST_UPTIME_ITEMS = [
+    ("Zabbix agent ping", "agent.ping"),
+    ("System uptime", "system.uptime"),
+]
+
+MONITORING_ITEMS = [
+    ("Zabbix server service active", "lab.systemd.active[zabbix-server]"),
+    ("Zabbix agent service active", "lab.systemd.active[zabbix-agent2]"),
+    ("Grafana service active", "lab.systemd.active[grafana-server]"),
+]
+
+
+def ensure_items(auth: str, hostid: str, iface: str, items: list[tuple[str, str]]) -> None:
+    for name, key in items:
+        ensure_item(auth, hostid, iface, name, key)
+
 
 def main() -> None:
     auth = zbx("user.login", {"username": ZABBIX_USER, "password": ZABBIX_PASSWORD})
     groupid = ensure_group(auth, "Asterisk Lab")
 
     sbc_hostid, sbc_iface = ensure_host(auth, groupid, SBC_HOST, SBC_VISIBLE, SBC_IP)
-    for name, key in SBC_ITEMS:
-        ensure_item(auth, sbc_hostid, sbc_iface, name, key)
-    print(f"provisioned {SBC_HOST} ({SBC_IP}) with {len(SBC_ITEMS)} items")
+    ensure_items(auth, sbc_hostid, sbc_iface, SBC_ITEMS + HOST_UPTIME_ITEMS)
+    print(f"provisioned {SBC_HOST} ({SBC_IP}) with {len(SBC_ITEMS) + len(HOST_UPTIME_ITEMS)} items")
 
     ast_hostid, ast_iface = ensure_host(auth, groupid, ASTERISK_HOST, ASTERISK_VISIBLE, ASTERISK_IP)
-    for name, key in ASTERISK_ITEMS:
-        ensure_item(auth, ast_hostid, ast_iface, name, key)
-    print(f"provisioned {ASTERISK_HOST} ({ASTERISK_IP}) with {len(ASTERISK_ITEMS)} items")
+    ensure_items(auth, ast_hostid, ast_iface, ASTERISK_ITEMS + HOST_UPTIME_ITEMS)
+    print(f"provisioned {ASTERISK_HOST} ({ASTERISK_IP}) with {len(ASTERISK_ITEMS) + len(HOST_UPTIME_ITEMS)} items")
+
+    mon_hostid, mon_iface = ensure_host(auth, groupid, MONITORING_HOST, MONITORING_VISIBLE, MONITORING_IP)
+    ensure_items(auth, mon_hostid, mon_iface, MONITORING_ITEMS + HOST_UPTIME_ITEMS)
+    print(
+        f"provisioned {MONITORING_HOST} ({MONITORING_IP}) "
+        f"with {len(MONITORING_ITEMS) + len(HOST_UPTIME_ITEMS)} items"
+    )
 
 
 if __name__ == "__main__":

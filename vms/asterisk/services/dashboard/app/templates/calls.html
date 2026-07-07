@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Calls - Voicebot Console{% endblock %}
+{% block content %}
+<div class="console-page-head">
+  <div>
+    <div class="eyebrow">PJSIP registration / call ledger</div>
+    <h1 class="page-title">Calls</h1>
+  </div>
+  <div class="control-strip">
+    <label for="call-filter">Filter</label>
+    <select id="call-filter" class="form-select form-select-sm">
+      <option value="">all calls</option>
+      <option value="in-progress">in progress</option>
+    </select>
+  </div>
+</div>
+
+<section id="extensions" class="console-panel mb-3">
+  <div class="panel-head">
+    <h2>Registered extensions</h2>
+    <span class="panel-kicker" id="extensions-summary">loading</span>
+  </div>
+  <div id="extensions-roster" class="extension-roster"></div>
+</section>
+
+<section class="console-panel">
+  <div class="panel-head">
+    <h2>Call ledger</h2>
+    <span class="panel-kicker" id="calls-summary">polling</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table console-table">
+      <thead>
+        <tr>
+          <th>Lane</th>
+          <th>Call ID</th>
+          <th>State</th>
+          <th>Transcripts</th>
+          <th>Recording</th>
+          <th>Turns</th>
+          <th>Last signal</th>
+          <th>Started</th>
+        </tr>
+      </thead>
+      <tbody id="calls-body">
+        <tr><td colspan="8" class="muted-cell">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+const callFilter = document.getElementById("call-filter");
+const params = new URLSearchParams(window.location.search);
+callFilter.value = params.get("status") || "";
+let callsPoller;
+
+function renderExtensions(data) {
+  document.getElementById("extensions-summary").textContent = data.available
+    ? `${data.registered}/${data.total} reachable`
+    : "unavailable";
+  const roster = document.getElementById("extensions-roster");
+  if (!data.available) {
+    roster.innerHTML = `<div class="empty-state">Asterisk CLI unavailable: ${escapeHtml(data.error || "unknown")}</div>`;
+    return;
+  }
+  roster.innerHTML = data.extensions.length ? data.extensions.map(ext => `
+    <div class="extension-chip ${ext.registered ? "is-registered" : "is-down"}">
+      <span class="status-dot"></span>
+      <strong>${escapeHtml(ext.extension)}</strong>
+      <span>${escapeHtml(ext.status)}</span>
+      ${ext.contact ? `<small>${escapeHtml(ext.contact)}</small>` : ""}
+    </div>
+  `).join("") : '<div class="empty-state">No configured softphone extensions found.</div>';
+}
+
+function renderCalls(data) {
+  const calls = data.calls || [];
+  document.getElementById("calls-summary").textContent = `${calls.length} shown`;
+  const body = document.getElementById("calls-body");
+  body.innerHTML = calls.length ? calls.map(call => `
+    <tr class="${call.in_progress ? "is-live-row" : ""}">
+      <td>${laneBadge(call.lane)}</td>
+      <td><a href="/calls/${encodeURIComponent(call.call_id)}"><code>${escapeHtml(shortId(call.call_id))}</code></a></td>
+      <td>${call.in_progress ? statusBadge("live", "live") : statusBadge("done", call.stale_without_end ? "stale" : "closed")}</td>
+      <td>${transcriptBadges(call)}</td>
+      <td>${call.recording_file ? `<span class="mono">${escapeHtml(call.recording_file)}</span>` : '<span class="text-secondary">unmatched</span>'}</td>
+      <td>${call.turn_count}</td>
+      <td>${escapeHtml(call.last_stage)} / ${escapeHtml(call.last_event)}</td>
+      <td>${fmtTs(call.start_ts)}</td>
+    </tr>
+  `).join("") : '<tr><td colspan="8" class="muted-cell">No calls match this filter.</td></tr>';
+}
+
+function loadCalls() {
+  if (callsPoller) clearInterval(callsPoller);
+  const filter = callFilter.value;
+  const qs = filter ? `?status=${encodeURIComponent(filter)}` : "";
+  const url = `/api/calls${qs}`;
+  window.history.replaceState({}, "", `/calls${qs}`);
+  callsPoller = pollJson(url, {{ refresh_s * 1000 }}, renderCalls);
+}
+
+pollJson("/api/extensions", {{ refresh_s * 1000 }}, renderExtensions);
+callFilter.addEventListener("change", loadCalls);
+loadCalls();
+</script>
+{% endblock %}

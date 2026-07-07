@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Call {{ call_id }} - Voicebot Console{% endblock %}
+{% block content %}
+<div class="console-page-head">
+  <div>
+    <div class="eyebrow">Call flow trace</div>
+    <h1 class="page-title"><code>{{ call_id }}</code></h1>
+  </div>
+  <a class="panel-link" href="/calls">back to calls</a>
+</div>
+
+<section class="console-panel mb-3">
+  <div class="call-hero" id="call-summary">
+    <div class="empty-state">Loading call state...</div>
+  </div>
+</section>
+
+<section class="console-panel">
+  <div class="panel-head">
+    <h2>STT output / LLM response / TTS input</h2>
+    <span class="panel-kicker" id="turn-count">polling</span>
+  </div>
+  <div id="turns-container" class="turn-flow"></div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+const callId = "{{ call_id }}";
+const revealedSteps = new Set();
+
+function renderCallSummary(call) {
+  const target = document.getElementById("call-summary");
+  if (!call) {
+    target.innerHTML = '<div class="empty-state">Call not found in events.jsonl.</div>';
+    return;
+  }
+  target.innerHTML = `
+    <div>
+      <span class="kpi-label">Lane</span>
+      <strong>${laneBadge(call.lane)}</strong>
+    </div>
+    <div>
+      <span class="kpi-label">State</span>
+      <strong>${call.in_progress ? statusBadge("live", "live") : statusBadge("done", call.stale_without_end ? "stale" : "closed")}</strong>
+    </div>
+    <div>
+      <span class="kpi-label">Transcripts</span>
+      <strong>${transcriptBadges(call)}</strong>
+    </div>
+    <div>
+      <span class="kpi-label">Recording</span>
+      <strong>${call.recording_file ? escapeHtml(call.recording_file) : "unmatched"}</strong>
+    </div>
+  `;
+}
+
+function stepMarkup(turn, step, index) {
+  const key = `${turn.turn_id}:${step.stage}`;
+  const isNew = step.available && !revealedSteps.has(key);
+  if (step.available) revealedSteps.add(key);
+  const latency = step.latency_ms || {};
+  return `
+    <div class="flow-step ${step.available ? "is-ready" : "is-pending"} ${isNew ? "just-revealed" : ""}" style="--step-index:${index}">
+      <div class="step-rail"><span>${index + 1}</span></div>
+      <div class="step-body">
+        <div class="step-head">
+          <strong>${escapeHtml(step.label)}</strong>
+          <span>${fmtMs(latency.ms)} ${latency.source === "measured" ? "measured" : "approx"}</span>
+        </div>
+        <div class="step-text">${step.text ? escapeHtml(step.text) : "Waiting for this stage..."}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderTurns(data) {
+  renderCallSummary(data.call);
+  const turns = data.turns || [];
+  document.getElementById("turn-count").textContent = `${turns.length} turns`;
+  const container = document.getElementById("turns-container");
+  if (!turns.length) {
+    container.innerHTML = '<div class="empty-state">The call has started, but no turn text has landed yet.</div>';
+    return;
+  }
+  container.innerHTML = turns.map(turn => `
+    <article class="turn-card ${data.call && data.call.in_progress ? "is-live" : ""}">
+      <header>
+        <div>
+          <span class="eyebrow">${escapeHtml(turn.turn_id)}</span>
+          <strong>${laneBadge(turn.lane)}</strong>
+        </div>
+        <span>${fmtTs(turn.start_ts)}</span>
+      </header>
+      <div class="flow-line">
+        ${turn.steps.map((step, index) => stepMarkup(turn, step, index)).join("")}
+      </div>
+      ${turn.tool_calls.length ? `<div class="tool-strip">${turn.tool_calls.map(tool => `<code>${escapeHtml(tool.event)}</code>`).join("")}</div>` : ""}
+    </article>
+  `).join("");
+}
+
+pollJson(`/api/calls/${encodeURIComponent(callId)}/turns`, {{ refresh_s * 1000 }}, renderTurns);
+</script>
+{% endblock %}

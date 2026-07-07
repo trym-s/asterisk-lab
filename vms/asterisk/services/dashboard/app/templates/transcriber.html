@@ -1,59 +1,58 @@
 {% extends "base.html" %}
-{% block title %}Transcriber - Voicebot Observability{% endblock %}
+{% block title %}Transcriber - Voicebot Console{% endblock %}
 {% block content %}
-<h2 class="page-title mb-3">Batch transcriber status</h2>
-<div class="row row-deck row-cards mb-3">
-  <div class="col-sm-4">
-    <div class="card"><div class="card-body">
-      <div class="text-secondary">transcriber.service</div>
-      <div class="h1" id="service-status">?</div>
-    </div></div>
+<div class="console-page-head">
+  <div>
+    <div class="eyebrow">Batch Whisper watcher</div>
+    <h1 class="page-title">Transcriber</h1>
   </div>
-  <div class="col-sm-4">
-    <div class="card"><div class="card-body">
-      <div class="text-secondary">Recordings</div>
-      <div class="h1" id="total-count">?</div>
-    </div></div>
+  <a class="panel-link" href="/calls">recording status on calls</a>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi-tile">
+    <span class="kpi-label">transcriber.service</span>
+    <strong id="service-status">?</strong>
+    <span class="kpi-foot">systemd</span>
   </div>
-  <div class="col-sm-4">
-    <div class="card"><div class="card-body">
-      <div class="text-secondary">Pending transcription</div>
-      <div class="h1" id="pending-count">?</div>
-    </div></div>
+  <div class="kpi-tile">
+    <span class="kpi-label">Recordings</span>
+    <strong id="total-count">?</strong>
+    <span class="kpi-foot">WAV files</span>
+  </div>
+  <div class="kpi-tile">
+    <span class="kpi-label">Pending</span>
+    <strong id="pending-count">?</strong>
+    <span class="kpi-foot">waiting for TXT sibling</span>
   </div>
 </div>
-<div class="card">
-  <div class="table-responsive">
-    <table class="table card-table table-vcenter">
-      <thead><tr><th>File</th><th>Modified</th><th>Status</th></tr></thead>
-      <tbody id="recordings-body">
-        <tr><td colspan="3" class="text-secondary">Loading...</td></tr>
-      </tbody>
-    </table>
+
+<section class="console-panel mt-3">
+  <div class="panel-head">
+    <h2>Batch lane state</h2>
+    <span class="panel-kicker" id="transcriber-kicker">polling</span>
   </div>
-</div>
+  <div id="transcriber-strip" class="status-strip"></div>
+</section>
 {% endblock %}
 {% block scripts %}
 <script>
 pollJson("/api/transcriber", {{ refresh_s * 1000 }}, (data) => {
   const status = document.getElementById("service-status");
-  status.textContent = data.service_active ? "active" : "inactive";
-  status.className = "h1 " + (data.service_active ? "text-success" : "text-danger");
+  status.innerHTML = data.service_active ? statusBadge("active", "up") : statusBadge("inactive", "down");
   document.getElementById("total-count").textContent = data.total;
   document.getElementById("pending-count").textContent = data.pending;
-
-  const body = document.getElementById("recordings-body");
-  if (!data.recordings.length) {
-    body.innerHTML = '<tr><td colspan="3" class="text-secondary">No recordings found.</td></tr>';
-    return;
-  }
-  body.innerHTML = data.recordings.map(r => `
-    <tr>
-      <td>${r.file}</td>
-      <td>${fmtTs(r.mtime)}</td>
-      <td>${r.transcribed ? '<span class="badge bg-green-lt">done</span>' : '<span class="badge bg-yellow-lt">pending</span>'}</td>
-    </tr>
-  `).join("");
+  document.getElementById("transcriber-kicker").textContent = data.service_active ? "active" : "attention";
+  document.getElementById("transcriber-strip").innerHTML = `
+    <div class="host-row ${data.service_active ? "status-up" : "status-down"}">
+      <span class="status-dot"></span>
+      <div>
+        <strong>Batch transcription</strong>
+        <small>${data.pending} of ${data.total} recordings pending</small>
+      </div>
+      <a href="/calls" class="panel-link">view calls</a>
+    </div>
+  `;
 });
 </script>
 {% endblock %}

@@ -1,45 +1,155 @@
 {% extends "base.html" %}
-{% block title %}Overview - Voicebot Observability{% endblock %}
+{% block title %}Overview - Voicebot Console{% endblock %}
 {% block content %}
-<h2 class="page-title mb-3">Recent calls</h2>
-<div class="card">
+<div class="console-page-head">
+  <div>
+    <div class="eyebrow">Asterisk VM / voicebot lanes</div>
+    <h1 class="page-title">Operations Overview</h1>
+  </div>
+  <div class="control-strip">
+    <label for="range-select">Range</label>
+    <select id="range-select" class="form-select form-select-sm">
+      <option value="5m">5m</option>
+      <option value="30m">30m</option>
+      <option value="1h" selected>1h</option>
+      <option value="1d">1d</option>
+    </select>
+  </div>
+</div>
+
+<div class="kpi-grid">
+  <a class="kpi-tile" href="/cost" id="cost-tile">
+    <span class="kpi-label">Estimated cost</span>
+    <strong id="cost-total">?</strong>
+    <span class="kpi-foot" id="cost-foot">selected range</span>
+  </a>
+  <a class="kpi-tile" href="/calls?status=in-progress" id="active-calls-tile">
+    <span class="kpi-label">Calls in progress</span>
+    <strong id="active-calls-count">?</strong>
+    <span class="kpi-foot" id="active-calls-foot">polling for starts</span>
+  </a>
+  <a class="kpi-tile" href="/calls#extensions" id="extensions-tile">
+    <span class="kpi-label">Registered extensions</span>
+    <strong id="extensions-count">?</strong>
+    <span class="kpi-foot" id="extensions-foot">PJSIP contacts</span>
+  </a>
+  <div class="kpi-tile" id="uptime-tile">
+    <span class="kpi-label">VM availability</span>
+    <strong id="uptime-total">?</strong>
+    <span class="kpi-foot" id="uptime-foot">Asterisk / SBC / Monitoring</span>
+  </div>
+</div>
+
+<div class="console-grid">
+  <section class="console-panel">
+    <div class="panel-head">
+      <h2>Live call radar</h2>
+      <span class="panel-kicker" id="live-radar-kicker">waiting</span>
+    </div>
+    <div id="active-calls-list" class="call-radar"></div>
+  </section>
+
+  <section class="console-panel">
+    <div class="panel-head">
+      <h2>Host uptime</h2>
+      <span class="panel-kicker" id="uptime-kicker">Zabbix</span>
+    </div>
+    <div id="uptime-list" class="host-grid"></div>
+  </section>
+</div>
+
+<section class="console-panel mt-3">
+  <div class="panel-head">
+    <h2>Recent signal</h2>
+    <a href="/calls" class="panel-link">all calls</a>
+  </div>
   <div class="table-responsive">
-    <table class="table card-table table-vcenter">
+    <table class="table console-table">
       <thead>
         <tr>
           <th>Lane</th>
-          <th>Call ID</th>
+          <th>Call</th>
+          <th>State</th>
+          <th>Transcript</th>
+          <th>Last signal</th>
           <th>Started</th>
-          <th>Ended</th>
-          <th>Turns</th>
-          <th></th>
         </tr>
       </thead>
-      <tbody id="calls-body">
-        <tr><td colspan="6" class="text-secondary">Loading...</td></tr>
+      <tbody id="recent-calls-body">
+        <tr><td colspan="6" class="muted-cell">Loading...</td></tr>
       </tbody>
     </table>
   </div>
-</div>
+</section>
 {% endblock %}
 {% block scripts %}
 <script>
-pollJson("/api/calls", {{ refresh_s * 1000 }}, (data) => {
-  const body = document.getElementById("calls-body");
-  if (!data.calls.length) {
-    body.innerHTML = '<tr><td colspan="6" class="text-secondary">No calls recorded yet.</td></tr>';
-    return;
-  }
-  body.innerHTML = data.calls.map(c => `
-    <tr>
-      <td><span class="badge bg-blue-lt">${c.lane}</span></td>
-      <td><code>${c.call_id}</code></td>
-      <td>${fmtTs(c.start_ts)}</td>
-      <td>${fmtTs(c.end_ts)}</td>
-      <td>${c.turn_count}</td>
-      <td><a href="/transcript?call_id=${encodeURIComponent(c.call_id)}">view transcript</a></td>
-    </tr>
+const overviewRange = document.getElementById("range-select");
+overviewRange.value = "{{ default_range }}";
+let overviewPoller;
+
+function renderOverview(data) {
+  const range = overviewRange.value;
+  document.getElementById("cost-total").textContent = fmtUsd(data.cost.total_usd);
+  document.getElementById("cost-foot").textContent = `${range} window`;
+  document.getElementById("cost-tile").href = `/cost?since=${encodeURIComponent(range)}`;
+
+  const active = data.active_calls.calls || [];
+  document.getElementById("active-calls-count").textContent = data.active_calls.count;
+  document.getElementById("active-calls-foot").textContent = active.length ? "call started" : "no active calls";
+  document.getElementById("live-radar-kicker").textContent = active.length ? "live" : "quiet";
+  document.getElementById("active-calls-list").innerHTML = active.length ? active.map(call => `
+    <a class="radar-row is-live" href="/calls/${encodeURIComponent(call.call_id)}">
+      <span>${laneBadge(call.lane)}</span>
+      <code>${escapeHtml(shortId(call.call_id))}</code>
+      <span>${escapeHtml(call.last_stage)} / ${escapeHtml(call.last_event)}</span>
+      <strong>${fmtAgo(call.start_ts)}</strong>
+    </a>
+  `).join("") : '<div class="empty-state">No call is currently in progress.</div>';
+
+  const ext = data.extensions;
+  document.getElementById("extensions-count").textContent = ext.available ? `${ext.registered}/${ext.total}` : "?";
+  document.getElementById("extensions-foot").textContent = ext.available
+    ? ext.extensions.map(row => row.extension).join(", ") || "no endpoints"
+    : "Asterisk CLI unavailable";
+
+  const uptimeHosts = data.uptime.hosts || [];
+  const upCount = uptimeHosts.filter(row => row.status === "up").length;
+  document.getElementById("uptime-total").textContent = data.uptime.available ? `${upCount}/${uptimeHosts.length}` : "?";
+  document.getElementById("uptime-foot").textContent = data.uptime.available ? "hosts up now" : "Zabbix unavailable";
+  document.getElementById("uptime-kicker").textContent = data.uptime.available ? "live API" : "degraded";
+  document.getElementById("uptime-list").innerHTML = uptimeHosts.map(host => `
+    <div class="host-row status-${escapeHtml(host.status)}">
+      <span class="status-dot"></span>
+      <div>
+        <strong>${escapeHtml(host.label)}</strong>
+        <small>${host.uptime_pct === null || host.uptime_pct === undefined ? "unavailable" : `${host.uptime_pct}% over range`}</small>
+      </div>
+      <span>${host.current_uptime_s ? fmtDuration(host.current_uptime_s) : "--"}</span>
+    </div>
   `).join("");
-});
+
+  const recent = data.recent_calls || [];
+  const body = document.getElementById("recent-calls-body");
+  body.innerHTML = recent.length ? recent.map(call => `
+    <tr>
+      <td>${laneBadge(call.lane)}</td>
+      <td><a href="/calls/${encodeURIComponent(call.call_id)}"><code>${escapeHtml(shortId(call.call_id))}</code></a></td>
+      <td>${call.in_progress ? statusBadge("live", "live") : statusBadge("done", call.stale_without_end ? "stale" : "closed")}</td>
+      <td>${transcriptBadges(call)}</td>
+      <td>${escapeHtml(call.last_stage)} / ${escapeHtml(call.last_event)}</td>
+      <td>${fmtTs(call.start_ts)}</td>
+    </tr>
+  `).join("") : '<tr><td colspan="6" class="muted-cell">No calls recorded yet.</td></tr>';
+}
+
+function loadOverview() {
+  if (overviewPoller) clearInterval(overviewPoller);
+  const range = overviewRange.value;
+  overviewPoller = pollJson(`/api/overview?since=${encodeURIComponent(range)}`, {{ refresh_s * 1000 }}, renderOverview);
+}
+
+overviewRange.addEventListener("change", loadOverview);
+loadOverview();
 </script>
 {% endblock %}
