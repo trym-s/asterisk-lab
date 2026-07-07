@@ -18,7 +18,10 @@ percentiles and sample counts, a Reliability panel that separates comparable
 neutral outcomes from lane-specific diagnostics, and Cost kept as normalized
 context rather than the headline number. No lane-selection "winner" number
 renders until the run passes explicit fairness preconditions; until then the
-dashboard shows an "as-deployed stack comparison" labeled observational.
+dashboard shows an "as-deployed stack comparison" labeled observational. The
+dashboard stays read-only, polling-refreshed, and deployed the same way as
+today: a systemd-managed FastAPI app on the Asterisk VM that never calls a
+model provider.
 
 ## Problem Statement
 
