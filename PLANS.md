@@ -7,12 +7,19 @@
 > The next spec starts with a fresh root `PLANS.md` from `docs/templates/PLANS.md`.
 
 **Status:** Pending
-**Governing spec:** none
+**Governing spec:** `docs/specs/spec04-livekit-pipecat-fair-comparison.md`
 **Last updated:** 2026-07-07
 
 ## Active milestones
 
-- [ ] Define active work.
+- [ ] Fairness Gate / Config Diff panel and API endpoint.
+- [ ] Paired Quality panel, expected-answer fixture, and API endpoint.
+- [ ] Latency Decision panel (p50/p95 with sample floor) and API endpoint.
+- [ ] Reliability panel (comparable outcomes vs lane-specific diagnostics)
+      and API endpoint.
+- [ ] Cost panel (normalized, measured vs estimated) and API endpoint.
+- [ ] `run_id` grouping key added across relevant trace events.
+- [ ] Live evidence captured for a real or replayed paired run.
 
 ## Blockers
 
@@ -24,6 +31,11 @@
 
 ## Recent updates
 
+- 2026-07-07 - Created spec04 (LiveKit vs Pipecat fair comparison) from the
+  converged Codex/Claude debate in
+  `docs/debates/livekit-pipecat-fair-comparison/transcript.md`
+  (`discussion_done`), and its kickoff prompt at
+  `docs/prompts/spec04-livekit-pipecat-fair-comparison.md`.
 - 2026-07-07 - Closed spec03 (voicebot dashboard redesign): implemented,
   deployed, verified live across the Asterisk, SBC, and monitoring VMs,
   archived to
