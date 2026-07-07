@@ -6,71 +6,58 @@
 > When the governing spec is complete, archive this file under `docs/archive/plan/`.
 > The next spec starts with a fresh root `PLANS.md` from `docs/templates/PLANS.md`.
 
-**Status:** Active - /opt deploy layout migration in progress.
-**Governing spec:** `docs/specs/spec01-adopt-agent-harness.md`
-**Last updated:** 2026-07-06
+**Status:** Active - spec02 voicebot observability dashboard authored; implementation pending.
+**Governing spec:** `docs/specs/spec02-voicebot-observability-dashboard.md`
+**Last updated:** 2026-07-07
 
 ## Active milestones
 
-- [x] Merge `AGENTS.md` template into project-specific 10-section AGENTS.md.
-- [x] Replace project-slug placeholders in `CLAUDE.md` and `.githooks/pre-commit`.
-- [x] Merge and prune all `<name>.template` files at the repo root and in `.codex/`.
-- [x] Rewrite `docs/architecture/app-architecture.md` for the real three-VM
-      plus voicebot layout.
-- [x] Seed `docs/memory/decisions.md` with DEC-002...DEC-006 from existing
-      operational knowledge (dual specs, transcriber pins, `.env` exclusion,
-      SBC direction-aware INVITE, external skill store).
-- [x] Fill `docs/runbooks/{local-development,testing,spec-rules}.md` with
-      the real check commands and dual-spec discipline.
-- [x] Create `docs/specs/spec01-adopt-agent-harness.md` and its kickoff prompt.
-- [x] Land the initialization commit (`chore(harness): initialize
-      agent-workflow-template`) after removing `INIT.md` and the empty
-      `awt/` directory.
-- [x] Migrate legacy `specs/` directory (domain specs, contracts, decisions, changes)
-      under `docs/specs/` (into `docs/specs/domains/`, `docs/specs/global/`,
-      and `docs/specs/changes/`). Consolidated into `docs/specs/` as the
-      single spec surface. Updated DEC-002 entry.
-- [x] Update references to `specs/` to `docs/specs/` across repository files.
-- [x] Update Makefile default VM IP to point to the active Asterisk VM (192.168.122.247).
-- [x] Remove stale migrated domain/global specs from `docs/specs/`.
-- [x] Move VM deploy payloads from `~/asterisk-lab` to
-      `/opt/asterisk-lab/current`.
-- [x] Move VM runtime env source to `/etc/asterisk-lab/env` with repo
-      `.env` retained as a host-local fallback.
-- [ ] Deploy the new payload layout to all live VMs and run verify targets.
+- [x] Author `docs/specs/spec02-voicebot-observability-dashboard.md` (9 sections,
+      decision-complete) and its paired kickoff prompt under `docs/prompts/`.
+- [ ] Scaffold the read-only FastAPI service under
+      `vms/asterisk/services/dashboard/` (app + Jinja2 + vendored Tabler/chart assets).
+- [ ] Build the data layer reusing `vms/asterisk/services/common/`
+      (`trace_events.read_events`, `usage_summary.PRICE`/`parse_since`, `turns.jsonl`).
+- [ ] Implement latency derivation from `ts` deltas per `(lane, call_id, turn_id)`,
+      preferring a real `duration_ms` when present.
+- [ ] Ship the four panels: parity, cost/usage, transcript, batch transcriber.
+- [ ] Add installer + systemd unit + Makefile targets + declarative verify smoke check.
+- [ ] Prove live behavior with a real or replayed call; link evidence under `runtime/`.
 
 ## Blockers
 
 - none
 
+## Carried over from spec01 (still Active)
+
+- [ ] Deploy the new `/opt/asterisk-lab/current` payload layout to all live VMs
+      and run verify targets. Tracked against `docs/specs/spec01-adopt-agent-harness.md`,
+      which remains Active until this lands. Not superseded by spec02.
+
 ## Canonical evidence
 
-- `AGENTS.md` sections 1-10 reflect the real project after the merge.
-- `docs/memory/decisions.md` DEC-001..DEC-006 documents the current
-  governance and operational baselines.
-- `docs/architecture/app-architecture.md` describes the current
-  three-VM plus voicebot layout.
-- `docs/specs/` is the single spec surface; stale migrated
-  `docs/specs/domains/` and `docs/specs/global/` content was removed.
-- `docs/memory/decisions.md` DEC-007 records `/opt/asterisk-lab/current`
-  payloads and `/etc/asterisk-lab/env` secrets.
+- `docs/specs/spec02-voicebot-observability-dashboard.md` defines the dashboard
+  contract; `docs/prompts/spec02-voicebot-observability-dashboard.md` is its kickoff.
+- Telemetry sources already exist on the Asterisk VM:
+  `/var/lib/voicebot/{events,usage,turns}.jsonl`
+  (`events.jsonl` schema `voicebot-events-v1`).
+- `docs/memory/decisions.md` DEC-001..DEC-007 documents governance and the
+  `/opt/asterisk-lab/current` + `/etc/asterisk-lab/env` deploy boundary.
 
 ## Recent updates
 
+- 2026-07-07 - Authored spec02 (voicebot observability dashboard, v1): FastAPI +
+  Tabler on the Asterisk VM, reads local JSONL, derived per-stage latency,
+  polling refresh, four panels. Real per-stage instrumentation and live streaming
+  were split out as separate follow-up specs. Repointed the governing spec to
+  spec02 and carried spec01's open deploy milestone forward.
 - 2026-07-06 - Started deploy layout migration: role payloads now target
   `/opt/asterisk-lab/current`, VM env loads from `/etc/asterisk-lab/env`,
   and `deploy/rsync/*.filter` keeps docs/harness/secrets out of VM payloads.
-- 2026-07-06 - Removed stale migrated domain/global specs under `docs/specs/`;
-  current specs are `specNN` files plus paired prompts.
-- 2026-07-06 - Added simplified VM management (virsh) targets (`vms`, `ips`, `up`, `down`, `up-sbc`, `down-sbc`, `up-mon`, `down-mon`) to the `Makefile`.
-- 2026-07-06 - Migrated all domain specs, contracts, decisions, and runbooks under `docs/specs/` (placed into `docs/specs/domains/`, `docs/specs/global/`, and `docs/specs/changes/`). Fixed path references in domains README, conventions, agent-routing, and validation model. Updated Makefile default VM IP.
-- 2026-07-06 - Harness initialized from agent-workflow-template. AGENTS.md
-  rewritten to 10-section layout; `docs/specs/spec01` created for
-  the adoption effort itself.
-- 2026-07-06 - `specs/` directory decommissioned. All spec work consolidated
-  under `docs/specs/`. DEC-002 updated. Stale references being cleaned up
-  across AGENTS.md, PROCESS.md, README.md, PLANS.md, spec-rules.md,
-  testing.md, Makefile, `.claude/README.md`, and `.codex/README.md`.
+- 2026-07-06 - Added simplified VM management (virsh) targets (`vms`, `ips`,
+  `up`, `down`, `up-sbc`, `down-sbc`, `up-mon`, `down-mon`) to the `Makefile`.
+- 2026-07-06 - Harness initialized from agent-workflow-template; `docs/specs/`
+  established as the single spec surface (DEC-002).
 
 ## Archive pointers
 
