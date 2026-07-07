@@ -3,9 +3,10 @@
 > Governed by `docs/runbooks/spec-rules.md`. A spec is a stable contract, not a
 > changelog. Daily progress belongs in `PLANS.md`.
 
-- **Status:** Draft
+- **Status:** Done
 - **Owner:** operator
 - **Created:** 2026-07-07
+- **Completed:** 2026-07-07
 
 ## Goal
 

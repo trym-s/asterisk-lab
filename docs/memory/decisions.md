@@ -107,3 +107,24 @@ Superseded decisions stay here and point to their replacement.
 - **Impact:** Installers load `/etc/asterisk-lab/env` first and fall back to
   repo-local `.env` for host workflows. Verification should treat host git as
   source of truth and VM `/opt/asterisk-lab/current` as rendered payload.
+
+## DEC-008 - Read-only consumers of services/common must not reuse its default-path helpers
+
+- **Decision:** `trace_events.default_events_path()` and
+  `usage.py`'s `_default_log_path()` fall back to a per-user XDG state path
+  when the caller lacks *write* access to `/var/lib/voicebot`. A read-only
+  consumer (the dashboard, running as `asterisk`, which can read but not
+  write that root-owned directory) must resolve its own read paths from the
+  `VOICEBOT_EVENTS_LOG` / `VOICEBOT_USAGE_LOG` override names plus a hardcoded
+  canonical default, and must not call those helpers directly.
+- **Reason:** The helpers exist to let writer agents work from an
+  unprivileged host during local dev without sudo; write-access is the
+  correct signal for a writer's fallback decision. For a reader that never
+  writes, checking `os.access(..., os.W_OK)` produces a false negative on the
+  VM (dir is `root:root 0755`) and silently serves an empty per-user path
+  instead of the real canonical log, with no error. Discovered when the
+  dashboard's `/api/calls` returned `[]` against 1043 real events on disk.
+- **Impact:** Any future service that reads (but does not write)
+  `/var/lib/voicebot/*.jsonl` must resolve its own read paths rather than
+  importing `default_events_path()` / `LOG_PATH` from `services/common`.
+  See `vms/asterisk/services/dashboard/app/config.py` for the pattern.

@@ -11,6 +11,9 @@
 - /**/__pycache__/***
 - /**/.rendered/***
 - /**/.claude/***
+- /**/.venv/***
+- /**/.ruff_cache/***
+- /**/.pytest_cache/***
 - /**.pyc
 + /.env.example
 + /Makefile
