@@ -51,9 +51,9 @@ def _dump_turn(kind: str, room: str, payload: dict) -> None:
             ) + "\n")
     except Exception:  # noqa: BLE001
         pass
-from livekit.agents import AutoSubscribe, JobContext, JobProcess, WorkerOptions, cli, llm
-from livekit.agents.pipeline import VoicePipelineAgent
-from livekit.plugins import openai, silero
+from livekit.agents import AutoSubscribe, JobContext, JobProcess, WorkerOptions, cli, llm  # noqa: E402
+from livekit.agents.pipeline import VoicePipelineAgent  # noqa: E402
+from livekit.plugins import openai, silero  # noqa: E402
 
 # services/common/ is bind-mounted at /opt/voicebot-common in the container.
 sys.path.insert(0, "/opt/voicebot-common")

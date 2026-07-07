@@ -54,18 +54,18 @@ contracts define supported behavior and required evidence.
 | `docs/archive/plan/` | Dated archives of completed `PLANS.md` states. |
 | `docs/debates/` | Debate transcripts (ignored) and sanitized summaries (tracked). |
 | `docs/templates/` | Seed templates for plans, specs, kickoff prompts, TODO topics, subagent roles. |
-| `deploy/` | Host-side deploy filters and payload shaping rules. |
 | `.claude/` | Claude Code harness: skills, subagent roles, per-developer settings. |
 | `.codex/` | Codex harness: config, skills, subagent roles. |
 | `.agents/` | Provider-neutral shared skill library (see DEC-006 on skill store layout). |
 | `.githooks/` | Repo-managed git hooks (identity + ASCII + spec-boundary checks). |
 | `.github/` | GitHub Actions workflows. |
-| `asterisk/` | Asterisk VM source of truth: `*.tmpl` config files, `rtp.conf`, `asterisk.service`, `transcriber.service`. |
-| `sbc/` | OpenSIPS + rtpengine source of truth: `opensips.cfg.tmpl`, `rtpengine.conf.tmpl`, `install.sh`, `verify.sh`. |
-| `monitoring/` | Zabbix + Grafana source of truth: install/verify scripts, dashboards, zabbix-agent2 setup. |
-| `services/` | Voicebot lanes and test harness (`livekit/`, `pipecat/`, `common/`, `test-caller/`). |
-| `scripts/` | Repo-owned host/VM scripts (`setup-transcriber.sh`, `verify.sh`, `watcher.py`, `transcribe.py`, `requirements.txt`). |
-| `infra/` | Host-side provisioning (libvirt bootstrap, cloud-init VM creation). |
+| `vms/asterisk/` | Asterisk VM source of truth: `etc/asterisk/*.tmpl` config files, `lib/systemd/system/*.service` units (`asterisk.service`, `transcriber.service`, `voicebot-dashboard.service`). |
+| `vms/asterisk/services/` | Voicebot lanes and test harness: `livekit/`, `pipecat/`, `common/` (shared model/cost/usage/trace code), `test-caller/`, `dashboard/` (read-only observability dashboard, spec02). |
+| `vms/sbc/` | OpenSIPS + rtpengine source of truth: `etc/opensips/opensips.cfg.tmpl`, `etc/rtpengine/rtpengine.conf.tmpl`, `install.sh`, `verify.sh`. |
+| `vms/monitoring/` | Zabbix + Grafana source of truth: `install.sh`, `verify.sh`, `setup-zabbix-agent.sh`, `verify-agent.sh`, metric collectors, dashboard provisioning. |
+| `infra/scripts/` | Repo-owned host/VM scripts: `lib/env.sh` (shared lab-env loader), `setup-transcriber.sh`, `verify.sh` (Asterisk VM smoke check), `watcher.py`, `transcribe.py`, `requirements.txt`. |
+| `infra/libvirt/` | Host-side VM provisioning: cloud-init domain XML, `create-cloudinit-vm.sh`, `setup-host.sh`. |
+| `infra/deploy/` | rsync filters shaping each VM's deploy payload (`asterisk.filter`, `sbc.filter`, `monitoring.filter`). |
 | `runtime/` | Ignored. Live evidence, recordings, logs, local state. |
 
 ## 4. Agent and Skill Model
@@ -141,14 +141,16 @@ Rules:
 ## 6. Architecture Principles
 
 - Templates are the source of truth for every rendered runtime config.
-  `asterisk/*.tmpl` renders into `/etc/asterisk`; `sbc/*.tmpl` into
-  `/etc/opensips` and `/etc/rtpengine`; `monitoring/*.tmpl` and its
-  companion scripts into `/etc/zabbix` and Grafana provisioning state.
-  Never hand-edit a rendered file on a VM: re-running the matching
-  installer will overwrite it.
-- Installers are idempotent. `install.sh`, `sbc/install.sh`,
-  `monitoring/install.sh`, and the voicebot lane installers must be safe
-  to re-run on an already-configured box.
+  `vms/asterisk/etc/asterisk/*.tmpl` renders into `/etc/asterisk`;
+  `vms/sbc/etc/{opensips,rtpengine}/*.tmpl` into `/etc/opensips` and
+  `/etc/rtpengine`; `vms/monitoring/` templates and companion scripts into
+  `/etc/zabbix` and Grafana provisioning state. Never hand-edit a rendered
+  file on a VM: re-running the matching installer will overwrite it.
+- Installers are idempotent. Root `install.sh`, `vms/sbc/install.sh`,
+  `vms/monitoring/install.sh`, the voicebot lane installers under
+  `vms/asterisk/services/{livekit,pipecat}/`, and
+  `vms/asterisk/services/dashboard/install.sh` must be safe to re-run on an
+  already-configured box.
 - Deploy payloads live under `/opt/asterisk-lab/current` on each VM. That
   directory is disposable rsync output, not a source repository.
 - Secrets and per-host values live in `/etc/asterisk-lab/env` on VMs.
@@ -168,7 +170,14 @@ Rules:
   to Asterisk (see DEC-005).
 - Voicebot lanes (LiveKit, Pipecat) are comparison surfaces. Parity must
   be proven with fresh runtime evidence before a lane is treated as stable;
-  shared model/cost policy lives under `services/common/`.
+  shared model/cost policy lives under `vms/asterisk/services/common/`.
+- The observability dashboard (`vms/asterisk/services/dashboard/`, spec02)
+  is a read-only consumer of `/var/lib/voicebot/*.jsonl` and
+  `/var/spool/asterisk/monitor/`. It never writes to those sinks and never
+  calls a model provider. It must not import the writer-oriented default-path
+  helpers in `vms/asterisk/services/common` (`trace_events.default_events_path()`,
+  `usage.LOG_PATH`): those fall back based on *write* access, which is wrong
+  for a reader running as `asterisk` on a root-owned directory (DEC-008).
 
 ## 7. Environment And Safety
 
@@ -186,7 +195,7 @@ Rules:
   `make verify-monitoring`, `sudo asterisk -rx ...`, `sudo opensipsctl fifo ...`,
   `sudo sngrep -d any port 5060`, `journalctl -u <service>`) are always
   allowed. State-changing commands on live VMs require operator approval.
-- The initial-INVITE routing rule in `sbc/opensips.cfg.tmpl` (DEC-005)
+- The initial-INVITE routing rule in `vms/sbc/etc/opensips/opensips.cfg.tmpl` (DEC-005)
   is safety-critical for B2BUA scenarios; any change to that branch must
   be verified end-to-end before being merged.
 - Live observation: on the SBC VM, `tail -f /var/log/syslog` shows OpenSIPS
@@ -208,7 +217,8 @@ Work is done only when all of these hold:
 - `PLANS.md` reflects the final state.
 - `git status` is clean: every agent-made change is committed.
 - If shell scripts changed, `shellcheck` passes (see `.github/workflows/`).
-- If Python changed, `ruff check` passes on `scripts/` and `services/`.
+- If Python changed, `ruff check` passes on `infra/scripts/` and
+  `vms/asterisk/services/`.
 
 ## 9. Commit Conventions
 
