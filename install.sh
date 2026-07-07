@@ -9,7 +9,7 @@ cd "$REPO_ROOT"
 
 # ---- env ------------------------------------------------------------
 # shellcheck source=/dev/null
-. "$REPO_ROOT/scripts/lib/env.sh"
+. "$REPO_ROOT/infra/scripts/lib/env.sh"
 load_lab_env "$REPO_ROOT"
 : "${SIP_EXTENSIONS:?SIP_EXTENSIONS not set; create /etc/asterisk-lab/env or repo .env and fill it in}"
 : "${ASTERISK_VERSION:=22.9.0}"
@@ -58,15 +58,15 @@ done
 
 # ---- 4. systemd unit ------------------------------------------------
 echo "==> systemd unit"
-$SUDO install -m 0644 asterisk/lib/systemd/system/asterisk.service /etc/systemd/system/asterisk.service
+$SUDO install -m 0644 vms/asterisk/lib/systemd/system/asterisk.service /etc/systemd/system/asterisk.service
 $SUDO systemctl daemon-reload
 $SUDO systemctl enable asterisk
 
 # ---- 5. render configs from templates -------------------------------
 echo "==> asterisk configs"
-$SUDO install -o asterisk -g asterisk -m 0644 asterisk/etc/asterisk/pjsip.conf.tmpl /etc/asterisk/pjsip.conf
-$SUDO install -o asterisk -g asterisk -m 0644 asterisk/etc/asterisk/extensions.conf.tmpl /etc/asterisk/extensions.conf
-$SUDO install -o asterisk -g asterisk -m 0644 asterisk/etc/asterisk/rtp.conf /etc/asterisk/rtp.conf
+$SUDO install -o asterisk -g asterisk -m 0644 vms/asterisk/etc/asterisk/pjsip.conf.tmpl /etc/asterisk/pjsip.conf
+$SUDO install -o asterisk -g asterisk -m 0644 vms/asterisk/etc/asterisk/extensions.conf.tmpl /etc/asterisk/extensions.conf
+$SUDO install -o asterisk -g asterisk -m 0644 vms/asterisk/etc/asterisk/rtp.conf /etc/asterisk/rtp.conf
 $SUDO install -d -o asterisk -g asterisk -m 0755 /var/spool/asterisk/monitor
 
 # Per-endpoint pjsip.d/<ext>.conf — rendered from pjsip-endpoint.conf.tmpl.
@@ -79,7 +79,7 @@ for ext in $SIP_EXTENSIONS; do
   # shellcheck disable=SC2016  # envsubst whitelist must be literal, not expanded.
   SIP_EXT="$ext" SIP_EXT_PASSWORD="${!pw_var}" \
     envsubst '${SIP_EXT} ${SIP_EXT_PASSWORD}' \
-    < asterisk/etc/asterisk/pjsip-endpoint.conf.tmpl \
+    < vms/asterisk/etc/asterisk/pjsip-endpoint.conf.tmpl \
     | $SUDO tee "${out}.new" >/dev/null
   $SUDO chown asterisk:asterisk "${out}.new"
   $SUDO chmod 0640 "${out}.new"
@@ -110,5 +110,5 @@ echo "  sudo asterisk -rx 'dialplan show from-softphones'"
 echo "  sudo sngrep -d any port 5060"
 echo
 echo "transcription (optional, runs locally on this box):"
-echo "  sudo ./scripts/setup-transcriber.sh     # venv + transcriber systemd unit"
+echo "  sudo ./infra/scripts/setup-transcriber.sh     # venv + transcriber systemd unit"
 echo "  systemctl status transcriber"

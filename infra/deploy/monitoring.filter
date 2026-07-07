@@ -14,9 +14,11 @@
 - /**.pyc
 + /.env.example
 + /Makefile
-+ /monitoring/***
-+ /scripts/
-+ /scripts/lib/***
++ /vms/
++ /vms/monitoring/***
++ /infra/
++ /infra/scripts/
++ /infra/scripts/lib/***
 - /AGENTS.md
 - /CLAUDE.md
 - /DEBATE.md

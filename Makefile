@@ -35,17 +35,17 @@ help: ## Show this help
 
 install: ## Run install.sh + setup-transcriber.sh on this host (Asterisk)
 	sudo ./install.sh
-	sudo ./scripts/setup-transcriber.sh
+	sudo ./infra/scripts/setup-transcriber.sh
 
 verify: ## Smoke-check the Asterisk lab on this host
-	sudo ./scripts/verify.sh
+	sudo ./infra/scripts/verify.sh
 
 deploy: ## rsync Asterisk payload to $(VM), then run install + setup-transcriber there
 	$(SSH) $(VM) '$(REMOTE_PREP)'
-	$(RSYNC_TO_VM) --filter='merge deploy/rsync/asterisk.filter' ./ $(VM):$(DEPLOY_DIR)/
+	$(RSYNC_TO_VM) --filter='merge infra/deploy/asterisk.filter' ./ $(VM):$(DEPLOY_DIR)/
 	$(SSH) $(VM) '$(REMOTE_ENV_MIGRATE)'
 	$(SSH) $(VM) '$(REMOTE_STAMP)'
-	$(SSH) $(VM) 'cd $(DEPLOY_DIR) && sudo ASTERISK_LAB_ENV=$(LAB_ENV) ./install.sh && sudo ASTERISK_LAB_ENV=$(LAB_ENV) ./scripts/setup-transcriber.sh'
+	$(SSH) $(VM) 'cd $(DEPLOY_DIR) && sudo ASTERISK_LAB_ENV=$(LAB_ENV) ./install.sh && sudo ASTERISK_LAB_ENV=$(LAB_ENV) ./infra/scripts/setup-transcriber.sh'
 
 logs: ## Tail asterisk + transcriber journals on $(VM)
 	$(SSH) $(VM) 'sudo journalctl -u asterisk -u transcriber -f --no-pager'
@@ -53,17 +53,17 @@ logs: ## Tail asterisk + transcriber journals on $(VM)
 # ---- SBC VM targets -------------------------------------------------------
 
 install-sbc: ## Run sbc/install.sh on this host (OpenSIPS + rtpengine)
-	sudo ./sbc/install.sh
+	sudo ./vms/sbc/install.sh
 
 verify-sbc: ## Smoke-check the SBC on this host
-	sudo ./sbc/verify.sh
+	sudo ./vms/sbc/verify.sh
 
 deploy-sbc: ## rsync SBC payload to $(SBC_VM), then run sbc/install.sh there
 	$(SSH) $(SBC_VM) '$(REMOTE_PREP)'
-	$(RSYNC_TO_VM) --filter='merge deploy/rsync/sbc.filter' ./ $(SBC_VM):$(DEPLOY_DIR)/
+	$(RSYNC_TO_VM) --filter='merge infra/deploy/sbc.filter' ./ $(SBC_VM):$(DEPLOY_DIR)/
 	$(SSH) $(SBC_VM) '$(REMOTE_ENV_MIGRATE)'
 	$(SSH) $(SBC_VM) '$(REMOTE_STAMP)'
-	$(SSH) $(SBC_VM) 'cd $(DEPLOY_DIR) && sudo ASTERISK_LAB_ENV=$(LAB_ENV) ./sbc/install.sh'
+	$(SSH) $(SBC_VM) 'cd $(DEPLOY_DIR) && sudo ASTERISK_LAB_ENV=$(LAB_ENV) ./vms/sbc/install.sh'
 
 logs-sbc: ## Tail /var/log/syslog on $(SBC_VM) — opensips + rtpengine live
 	$(SSH) $(SBC_VM) 'sudo tail -f /var/log/syslog'
@@ -71,74 +71,74 @@ logs-sbc: ## Tail /var/log/syslog on $(SBC_VM) — opensips + rtpengine live
 # ---- Monitoring VM targets -----------------------------------------------
 
 install-monitoring: ## Run monitoring/install.sh on this host (Zabbix + Grafana)
-	sudo ./monitoring/install.sh
+	sudo ./vms/monitoring/install.sh
 
 verify-monitoring: ## Smoke-check the monitoring stack on this host
-	sudo ./monitoring/verify.sh
+	sudo ./vms/monitoring/verify.sh
 
 deploy-monitoring: ## rsync monitoring payload to $(MONITORING_VM), then run monitoring/install.sh there
 	$(SSH) $(MONITORING_VM) '$(REMOTE_PREP)'
-	$(RSYNC_TO_VM) --filter='merge deploy/rsync/monitoring.filter' ./ $(MONITORING_VM):$(DEPLOY_DIR)/
+	$(RSYNC_TO_VM) --filter='merge infra/deploy/monitoring.filter' ./ $(MONITORING_VM):$(DEPLOY_DIR)/
 	$(SSH) $(MONITORING_VM) '$(REMOTE_ENV_MIGRATE)'
 	$(SSH) $(MONITORING_VM) '$(REMOTE_STAMP)'
-	$(SSH) $(MONITORING_VM) 'cd $(DEPLOY_DIR) && sudo ASTERISK_LAB_ENV=$(LAB_ENV) ./monitoring/install.sh'
+	$(SSH) $(MONITORING_VM) 'cd $(DEPLOY_DIR) && sudo ASTERISK_LAB_ENV=$(LAB_ENV) ./vms/monitoring/install.sh'
 
 logs-monitoring: ## Tail monitoring service journals on $(MONITORING_VM)
 	$(SSH) $(MONITORING_VM) 'sudo journalctl -u zabbix-server -u zabbix-agent2 -u grafana-server -u apache2 -u postgresql -f --no-pager'
 
 install-zabbix-agent: ## Run monitoring/setup-zabbix-agent.sh on this host
-	sudo ./monitoring/setup-zabbix-agent.sh
+	sudo ./vms/monitoring/setup-zabbix-agent.sh
 
 verify-zabbix-agent: ## Smoke-check zabbix-agent2 on this host
-	sudo ./monitoring/verify-agent.sh
+	sudo ./vms/monitoring/verify-agent.sh
 
 deploy-agent-asterisk: ## rsync Asterisk payload to $(VM), then install zabbix-agent2 there
 	$(SSH) $(VM) '$(REMOTE_PREP)'
-	$(RSYNC_TO_VM) --filter='merge deploy/rsync/asterisk.filter' ./ $(VM):$(DEPLOY_DIR)/
+	$(RSYNC_TO_VM) --filter='merge infra/deploy/asterisk.filter' ./ $(VM):$(DEPLOY_DIR)/
 	$(SSH) $(VM) '$(REMOTE_ENV_MIGRATE)'
 	$(SSH) $(VM) '$(REMOTE_STAMP)'
-	$(SSH) $(VM) 'cd $(DEPLOY_DIR) && sudo ASTERISK_LAB_ENV=$(LAB_ENV) ./monitoring/setup-zabbix-agent.sh'
+	$(SSH) $(VM) 'cd $(DEPLOY_DIR) && sudo ASTERISK_LAB_ENV=$(LAB_ENV) ./vms/monitoring/setup-zabbix-agent.sh'
 
 deploy-agent-sbc: ## rsync SBC payload to $(SBC_VM), then install zabbix-agent2 there
 	$(SSH) $(SBC_VM) '$(REMOTE_PREP)'
-	$(RSYNC_TO_VM) --filter='merge deploy/rsync/sbc.filter' ./ $(SBC_VM):$(DEPLOY_DIR)/
+	$(RSYNC_TO_VM) --filter='merge infra/deploy/sbc.filter' ./ $(SBC_VM):$(DEPLOY_DIR)/
 	$(SSH) $(SBC_VM) '$(REMOTE_ENV_MIGRATE)'
 	$(SSH) $(SBC_VM) '$(REMOTE_STAMP)'
-	$(SSH) $(SBC_VM) 'cd $(DEPLOY_DIR) && sudo ASTERISK_LAB_ENV=$(LAB_ENV) ./monitoring/setup-zabbix-agent.sh'
+	$(SSH) $(SBC_VM) 'cd $(DEPLOY_DIR) && sudo ASTERISK_LAB_ENV=$(LAB_ENV) ./vms/monitoring/setup-zabbix-agent.sh'
 
 # ---- Voicebot stacks (LiveKit / Pipecat) — run on the Asterisk VM --------
 
 install-voicebot-livekit: ## Provision the LiveKit voicebot stack on this host
-	sudo -E ./services/livekit/install.sh
+	sudo -E ./vms/asterisk/services/livekit/install.sh
 
 deploy-voicebot-livekit: ## rsync Asterisk payload to $(VM), then provision LiveKit stack there
 	$(SSH) $(VM) '$(REMOTE_PREP)'
-	$(RSYNC_TO_VM) --filter='merge deploy/rsync/asterisk.filter' ./ $(VM):$(DEPLOY_DIR)/
+	$(RSYNC_TO_VM) --filter='merge infra/deploy/asterisk.filter' ./ $(VM):$(DEPLOY_DIR)/
 	$(SSH) $(VM) '$(REMOTE_ENV_MIGRATE)'
 	$(SSH) $(VM) '$(REMOTE_STAMP)'
-	$(SSH) $(VM) 'cd $(DEPLOY_DIR) && sudo ASTERISK_LAB_ENV=$(LAB_ENV) VOICEBOT_REPO_REVISION="$$(cat .deploy-revision 2>/dev/null || echo unknown)" ./services/livekit/install.sh'
+	$(SSH) $(VM) 'cd $(DEPLOY_DIR) && sudo ASTERISK_LAB_ENV=$(LAB_ENV) VOICEBOT_REPO_REVISION="$$(cat .deploy-revision 2>/dev/null || echo unknown)" ./vms/asterisk/services/livekit/install.sh'
 
 logs-voicebot-livekit: ## Tail LiveKit stack container logs on $(VM)
 	$(SSH) $(VM) 'sudo docker logs -f --tail=100 lk-agent lk-sip lk-server 2>&1'
 
 install-voicebot-pipecat: ## Provision the Pipecat voicebot stack on this host
-	sudo -E ./services/pipecat/install.sh
+	sudo -E ./vms/asterisk/services/pipecat/install.sh
 
 deploy-voicebot-pipecat: ## rsync Asterisk payload to $(VM), then provision Pipecat stack there
 	$(SSH) $(VM) '$(REMOTE_PREP)'
-	$(RSYNC_TO_VM) --filter='merge deploy/rsync/asterisk.filter' ./ $(VM):$(DEPLOY_DIR)/
+	$(RSYNC_TO_VM) --filter='merge infra/deploy/asterisk.filter' ./ $(VM):$(DEPLOY_DIR)/
 	$(SSH) $(VM) '$(REMOTE_ENV_MIGRATE)'
 	$(SSH) $(VM) '$(REMOTE_STAMP)'
-	$(SSH) $(VM) 'cd $(DEPLOY_DIR) && sudo ASTERISK_LAB_ENV=$(LAB_ENV) VOICEBOT_REPO_REVISION="$$(cat .deploy-revision 2>/dev/null || echo unknown)" ./services/pipecat/install.sh'
+	$(SSH) $(VM) 'cd $(DEPLOY_DIR) && sudo ASTERISK_LAB_ENV=$(LAB_ENV) VOICEBOT_REPO_REVISION="$$(cat .deploy-revision 2>/dev/null || echo unknown)" ./vms/asterisk/services/pipecat/install.sh'
 
 logs-voicebot-pipecat: ## Tail Pipecat agent logs on $(VM)
 	$(SSH) $(VM) 'sudo docker logs -f --tail=100 pc-agent 2>&1'
 
 gen-utterances: ## Generate test-caller WAVs via ElevenLabs (uses host .env)
-	./services/test-caller/gen-utterances.sh
+	./vms/asterisk/services/test-caller/gen-utterances.sh
 
 usage-summary: ## Print API spend summary from /var/lib/voicebot/usage.jsonl on $(VM)
-	$(SSH) $(VM) 'python3 $(DEPLOY_DIR)/services/common/usage_summary.py $(ARGS)'
+	$(SSH) $(VM) 'python3 $(DEPLOY_DIR)/vms/asterisk/services/common/usage_summary.py $(ARGS)'
 
 # ---- VM Management (virsh) targets ----------------------------------------
 

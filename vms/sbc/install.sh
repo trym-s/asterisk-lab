@@ -5,12 +5,12 @@
 # Idempotent: re-running on a configured box becomes a series of skips.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 # ---- env ------------------------------------------------------------
 # shellcheck source=/dev/null
-. "$REPO_ROOT/scripts/lib/env.sh"
+. "$REPO_ROOT/infra/scripts/lib/env.sh"
 load_lab_env "$REPO_ROOT"
 : "${SBC_IP:?SBC_IP not set; add it to /etc/asterisk-lab/env or repo .env (virsh net-dhcp-leases default)}"
 : "${ASTERISK_IP:?ASTERISK_IP not set; add it to the lab env file (the Asterisk VM IP that opensips will relay to)}"
@@ -62,11 +62,11 @@ DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y --no-install-recommends 
 # envsubst whitelist is load-bearing: the template uses $du, $rs, $ru, $var(...)
 # pseudo-variables that OpenSIPS expands at runtime. Without the whitelist envsubst
 # would replace those with empty strings and the parser would reject the config.
-echo "==> /etc/opensips/opensips.cfg from sbc/etc/opensips/opensips.cfg.tmpl"
+echo "==> /etc/opensips/opensips.cfg from vms/sbc/etc/opensips/opensips.cfg.tmpl"
 # shellcheck disable=SC2016  # envsubst whitelist must be literal, not expanded.
 SBC_IP="$SBC_IP" ASTERISK_IP="$ASTERISK_IP" \
   envsubst '${SBC_IP} ${ASTERISK_IP}' \
-  < sbc/etc/opensips/opensips.cfg.tmpl \
+  < vms/sbc/etc/opensips/opensips.cfg.tmpl \
   | $SUDO tee /etc/opensips/opensips.cfg.new >/dev/null
 $SUDO /usr/sbin/opensips -C -f /etc/opensips/opensips.cfg.new >/dev/null
 $SUDO chmod 0644 /etc/opensips/opensips.cfg.new
@@ -82,11 +82,11 @@ if grep -q '^RUN_OPENSIPS=no$' /etc/default/opensips; then
 fi
 
 # ---- 6. render rtpengine.conf from template -------------------------
-echo "==> /etc/rtpengine/rtpengine.conf from sbc/etc/rtpengine/rtpengine.conf.tmpl"
+echo "==> /etc/rtpengine/rtpengine.conf from vms/sbc/etc/rtpengine/rtpengine.conf.tmpl"
 # shellcheck disable=SC2016  # envsubst whitelist must be literal, not expanded.
 SBC_IP="$SBC_IP" \
   envsubst '${SBC_IP}' \
-  < sbc/etc/rtpengine/rtpengine.conf.tmpl \
+  < vms/sbc/etc/rtpengine/rtpengine.conf.tmpl \
   | $SUDO tee /etc/rtpengine/rtpengine.conf.new >/dev/null
 $SUDO chmod 0644 /etc/rtpengine/rtpengine.conf.new
 $SUDO mv /etc/rtpengine/rtpengine.conf.new /etc/rtpengine/rtpengine.conf

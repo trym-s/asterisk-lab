@@ -2,11 +2,11 @@
 # Install and configure zabbix-agent2 on any lab node.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 # shellcheck source=/dev/null
-. "$REPO_ROOT/scripts/lib/env.sh"
+. "$REPO_ROOT/infra/scripts/lib/env.sh"
 load_lab_env "$REPO_ROOT"
 : "${MONITORING_IP:?MONITORING_IP not set; add it to the lab env file or pass MONITORING_IP=<ip>}"
 : "${ZABBIX_VERSION:=7.0}"
@@ -56,12 +56,12 @@ set_agent_conf ServerActive "$MONITORING_IP" "$agent_conf"
 set_agent_conf Hostname "$ZABBIX_HOSTNAME" "$agent_conf"
 
 $SUDO install -d -m 0755 /etc/zabbix/zabbix_agent2.d
-$SUDO install -m 0755 monitoring/usr/local/bin/opensips-mi-zabbix /usr/local/bin/opensips-mi-zabbix
-$SUDO install -m 0755 monitoring/usr/local/bin/asterisk-metrics /usr/local/bin/asterisk-metrics
-$SUDO install -m 0755 monitoring/usr/local/bin/rtpengine-metrics /usr/local/bin/rtpengine-metrics
+$SUDO install -m 0755 vms/monitoring/usr/local/bin/opensips-mi-zabbix /usr/local/bin/opensips-mi-zabbix
+$SUDO install -m 0755 vms/monitoring/usr/local/bin/asterisk-metrics /usr/local/bin/asterisk-metrics
+$SUDO install -m 0755 vms/monitoring/usr/local/bin/rtpengine-metrics /usr/local/bin/rtpengine-metrics
 # shellcheck disable=SC2016
 envsubst '${MONITORING_IP} ${ZABBIX_HOSTNAME}' \
-  < monitoring/etc/zabbix/zabbix_agent2.d/lab.conf.tmpl \
+  < vms/monitoring/etc/zabbix/zabbix_agent2.d/lab.conf.tmpl \
   | $SUDO tee /etc/zabbix/zabbix_agent2.d/lab.conf >/dev/null
 $SUDO chmod 0644 /etc/zabbix/zabbix_agent2.d/lab.conf
 

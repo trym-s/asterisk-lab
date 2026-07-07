@@ -9,7 +9,7 @@
 #   /var/lib/asterisk/.cache/whisper/       pre-downloaded model
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 APPDIR=/opt/transcriber
 VENV=$APPDIR/venv
 # `base` is the watcher.py default and hallucinates on 8 kHz telephony audio;
@@ -42,8 +42,8 @@ fi
 
 echo "==> app dir $APPDIR"
 $SUDO install -d -m 0755 "$APPDIR"
-$SUDO install -m 0755 "$REPO_ROOT/scripts/watcher.py"    "$APPDIR/watcher.py"
-$SUDO install -m 0755 "$REPO_ROOT/scripts/transcribe.py" "$APPDIR/transcribe.py"
+$SUDO install -m 0755 "$REPO_ROOT/infra/scripts/watcher.py"    "$APPDIR/watcher.py"
+$SUDO install -m 0755 "$REPO_ROOT/infra/scripts/transcribe.py" "$APPDIR/transcribe.py"
 
 echo "==> venv at $VENV (openai-whisper)"
 [ -d "$VENV" ] || $SUDO python3 -m venv "$VENV"
@@ -52,7 +52,7 @@ echo "==> venv at $VENV (openai-whisper)"
 $SUDO install -d -m 1777 /var/tmp/pip-build /var/tmp/pip-cache
 PIP_ENV=(env TMPDIR=/var/tmp PIP_CACHE_DIR=/var/tmp/pip-cache)
 $SUDO "${PIP_ENV[@]}" "$VENV/bin/pip" install --upgrade pip
-$SUDO "${PIP_ENV[@]}" "$VENV/bin/pip" install -r "$REPO_ROOT/scripts/requirements.txt"
+$SUDO "${PIP_ENV[@]}" "$VENV/bin/pip" install -r "$REPO_ROOT/infra/scripts/requirements.txt"
 
 echo "==> pre-download whisper model '$MODEL' into asterisk's cache"
 $SUDO install -d -o asterisk -g asterisk -m 0755 /var/lib/asterisk/.cache
@@ -60,7 +60,7 @@ as_user asterisk env HOME=/var/lib/asterisk XDG_CACHE_HOME=/var/lib/asterisk/.ca
   "$VENV/bin/python" -c "import whisper; whisper.load_model('$MODEL')"
 
 echo "==> systemd unit"
-$SUDO install -m 0644 "$REPO_ROOT/asterisk/lib/systemd/system/transcriber.service" \
+$SUDO install -m 0644 "$REPO_ROOT/vms/asterisk/lib/systemd/system/transcriber.service" \
   /etc/systemd/system/transcriber.service
 
 echo "==> systemd drop-in: WHISPER_MODEL=$MODEL WHISPER_LANGUAGE=${LANGUAGE:-<auto-detect>}"

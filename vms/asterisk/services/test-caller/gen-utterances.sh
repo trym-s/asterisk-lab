@@ -10,11 +10,11 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$HERE/../.." && pwd)"
+REPO_ROOT="$(cd "$HERE/../../.." && pwd)"
 cd "$HERE"
 
 # shellcheck source=/dev/null
-. "$REPO_ROOT/scripts/lib/env.sh"
+. "$REPO_ROOT/infra/scripts/lib/env.sh"
 load_lab_env "$REPO_ROOT"
 : "${ELEVENLABS_API_KEY:?ELEVENLABS_API_KEY not set in the lab env file}"
 : "${ELEVENLABS_VOICE_ID:?ELEVENLABS_VOICE_ID not set in the lab env file (e.g. a Turkish voice)}"

@@ -86,5 +86,5 @@ services:
       - ../common:/opt/voicebot-common:ro
       # Repo root — used for repo revision metadata. The Mavi Kapı corpus
       # itself lives under ../common/docs/magaza and is mounted above.
-      - ../..:/opt/voicebot-docs:ro
+      - ../../../:/opt/voicebot-docs:ro
     depends_on: [livekit-server]

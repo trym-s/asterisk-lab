@@ -3,11 +3,11 @@
 # plus Grafana and the Grafana Zabbix plugin.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 # shellcheck source=/dev/null
-. "$REPO_ROOT/scripts/lib/env.sh"
+. "$REPO_ROOT/infra/scripts/lib/env.sh"
 load_lab_env "$REPO_ROOT"
 : "${ZABBIX_DB_PASSWORD:?ZABBIX_DB_PASSWORD not set; add it to the monitoring VM lab env file}"
 : "${MONITORING_IP:=$(hostname -I | awk '{print $1}')}"
@@ -118,7 +118,7 @@ $SUDO install -d -m 0750 -o www-data -g www-data /etc/zabbix/web
 # shellcheck disable=SC2016
 ZABBIX_DB_PASSWORD="$ZABBIX_DB_PASSWORD" \
   envsubst '${ZABBIX_DB_PASSWORD}' \
-  < monitoring/etc/zabbix/web/zabbix.conf.php.tmpl \
+  < vms/monitoring/etc/zabbix/web/zabbix.conf.php.tmpl \
   | $SUDO tee /etc/zabbix/web/zabbix.conf.php >/dev/null
 $SUDO chown www-data:www-data /etc/zabbix/web/zabbix.conf.php
 $SUDO chmod 0640 /etc/zabbix/web/zabbix.conf.php
@@ -128,10 +128,10 @@ SBC_IP="${SBC_IP:-192.168.122.3}" \
   ASTERISK_IP="${ASTERISK_IP:-192.168.122.247}" \
   ZABBIX_USER="${ZABBIX_USER:-Admin}" \
   ZABBIX_PASSWORD="${ZABBIX_PASSWORD:-zabbix}" \
-  python3 monitoring/provision-observability.py
+  python3 vms/monitoring/provision-observability.py
 
 echo "==> local Zabbix agent config"
-$SUDO env MONITORING_IP="$MONITORING_IP" ZABBIX_VERSION="$ZABBIX_VERSION" ./monitoring/setup-zabbix-agent.sh
+$SUDO env MONITORING_IP="$MONITORING_IP" ZABBIX_VERSION="$ZABBIX_VERSION" ./vms/monitoring/setup-zabbix-agent.sh
 
 echo "==> Grafana Zabbix plugin"
 GRAFANA_CLI=/usr/sbin/grafana-cli
@@ -141,11 +141,11 @@ if ! "$GRAFANA_CLI" --homepath "$GRAFANA_HOME" plugins ls 2>/dev/null | grep -q 
 fi
 
 echo "==> Grafana datasource + dashboard provisioning"
-$SUDO install -m 0644 monitoring/etc/grafana/provisioning/datasources/zabbix.yaml /etc/grafana/provisioning/datasources/zabbix.yaml
-$SUDO install -m 0644 monitoring/etc/grafana/provisioning/dashboards/asterisk-lab.yaml /etc/grafana/provisioning/dashboards/asterisk-lab.yaml
+$SUDO install -m 0644 vms/monitoring/etc/grafana/provisioning/datasources/zabbix.yaml /etc/grafana/provisioning/datasources/zabbix.yaml
+$SUDO install -m 0644 vms/monitoring/etc/grafana/provisioning/dashboards/asterisk-lab.yaml /etc/grafana/provisioning/dashboards/asterisk-lab.yaml
 $SUDO install -d -m 0755 -o grafana -g grafana /var/lib/grafana/dashboards/asterisk-lab
-$SUDO install -m 0644 -o grafana -g grafana monitoring/var/lib/grafana/dashboards/asterisk-lab/opensips-sbc-overview.json /var/lib/grafana/dashboards/asterisk-lab/opensips-sbc-overview.json
-$SUDO install -m 0644 -o grafana -g grafana monitoring/var/lib/grafana/dashboards/asterisk-lab/asterisk-pbx-overview.json /var/lib/grafana/dashboards/asterisk-lab/asterisk-pbx-overview.json
+$SUDO install -m 0644 -o grafana -g grafana vms/monitoring/var/lib/grafana/dashboards/asterisk-lab/opensips-sbc-overview.json /var/lib/grafana/dashboards/asterisk-lab/opensips-sbc-overview.json
+$SUDO install -m 0644 -o grafana -g grafana vms/monitoring/var/lib/grafana/dashboards/asterisk-lab/asterisk-pbx-overview.json /var/lib/grafana/dashboards/asterisk-lab/asterisk-pbx-overview.json
 
 echo "==> enable + restart services"
 $SUDO systemctl daemon-reload
