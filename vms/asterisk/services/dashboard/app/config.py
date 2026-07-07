@@ -19,6 +19,13 @@ DEFAULT_EVENTS_LOG = Path("/var/lib/voicebot/events.jsonl")
 DEFAULT_USAGE_LOG = Path("/var/lib/voicebot/usage.jsonl")
 DEFAULT_TURNS_LOG = Path("/var/lib/voicebot/turns.jsonl")
 DEFAULT_MONITOR_DIR = Path("/var/spool/asterisk/monitor")
+# Repo tree default: services/dashboard/app is a sibling of
+# services/test-caller under services/. install.sh copies the fixture to
+# /opt/voicebot-dashboard/fixtures/ and the systemd unit overrides this via
+# VOICEBOT_DASHBOARD_EXPECTED_CORPUS_PATH, same pattern as VOICEBOT_COMMON_DIR.
+DEFAULT_EXPECTED_CORPUS = (
+    Path(__file__).resolve().parent.parent.parent / "test-caller" / "expected-answers.json"
+)
 
 
 def _resolve_path(env_var: str, default: Path) -> Path:
@@ -43,6 +50,8 @@ class Settings:
     zabbix_api_token: str | None
     basic_auth_user: str | None
     basic_auth_password: str | None
+    latency_min_n: int
+    expected_corpus_path: Path
 
 
 def load_settings() -> Settings:
@@ -64,4 +73,8 @@ def load_settings() -> Settings:
         zabbix_api_token=os.environ.get("VOICEBOT_DASHBOARD_ZABBIX_API_TOKEN") or None,
         basic_auth_user=basic_auth_user,
         basic_auth_password=basic_auth_password,
+        latency_min_n=int(os.environ.get("VOICEBOT_DASHBOARD_LATENCY_MIN_N", "20")),
+        expected_corpus_path=_resolve_path(
+            "VOICEBOT_DASHBOARD_EXPECTED_CORPUS_PATH", DEFAULT_EXPECTED_CORPUS
+        ),
     )

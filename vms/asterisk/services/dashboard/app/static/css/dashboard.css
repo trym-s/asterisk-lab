@@ -295,10 +295,55 @@ body {
 
 .status-done,
 .status-muted,
-.status-stale {
+.status-stale,
+.status-not_enforced {
   color: var(--console-muted);
   border-color: rgba(100, 116, 139, 0.34);
   background: rgba(100, 116, 139, 0.1);
+}
+
+.status-warn {
+  color: var(--console-warn);
+  border-color: rgba(183, 121, 31, 0.4);
+  background: rgba(183, 121, 31, 0.12);
+}
+
+.status-not_comparable,
+.status-fail {
+  color: var(--console-down);
+  border-color: rgba(180, 35, 24, 0.38);
+  background: rgba(180, 35, 24, 0.1);
+}
+
+.status-pass {
+  color: var(--console-up);
+  border-color: rgba(19, 138, 97, 0.38);
+  background: rgba(19, 138, 97, 0.1);
+}
+
+.comparison-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.9rem;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(183, 121, 31, 0.4);
+  border-radius: 6px;
+  background: rgba(183, 121, 31, 0.08);
+  color: var(--console-ink);
+  font-weight: 700;
+}
+
+.reliability-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+@media (max-width: 991px) {
+  .reliability-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .call-radar,

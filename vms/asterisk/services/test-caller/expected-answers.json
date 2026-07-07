@@ -1,0 +1,69 @@
+{
+  "schema_version": "voicebot-expected-answers-v1",
+  "note": "Human-authored deterministic scoring fixture (Paired Quality panel). Keyed by the same utterance_id used in utterances.tsv. Read-only; the dashboard never writes here.",
+  "utterances": [
+    {
+      "utterance_id": "01-greeting",
+      "text": "Merhaba, size bir sorum vardı.",
+      "expected_intent": "greeting",
+      "tool_required": false,
+      "expected_source_docs": [],
+      "required_facts": [],
+      "forbidden_facts": []
+    },
+    {
+      "utterance_id": "02-saatler",
+      "text": "Mağazanız Pazar günü kaçta açılıyor?",
+      "expected_intent": "store_hours_lookup",
+      "tool_required": true,
+      "expected_source_docs": ["hakkinda.md"],
+      "required_facts": ["on bir", "11"],
+      "forbidden_facts": []
+    },
+    {
+      "utterance_id": "03-havlu-fiyat",
+      "text": "Banyo havlusu ne kadar?",
+      "expected_intent": "product_price_lookup",
+      "tool_required": true,
+      "expected_source_docs": ["urunler.md"],
+      "required_facts": ["üç yüz doksan", "390"],
+      "forbidden_facts": []
+    },
+    {
+      "utterance_id": "04-nevresim-cift",
+      "text": "Çift kişilik nevresim takımı fiyatı ne kadar?",
+      "expected_intent": "product_price_lookup",
+      "tool_required": true,
+      "expected_source_docs": ["urunler.md"],
+      "required_facts": ["sekiz yüz doksan", "890"],
+      "forbidden_facts": []
+    },
+    {
+      "utterance_id": "05-kargo-sure",
+      "text": "İzmir'e kargo kaç günde geliyor?",
+      "expected_intent": "shipping_time_lookup",
+      "tool_required": true,
+      "expected_source_docs": ["kargo-iade.md"],
+      "required_facts": ["bir iş günü", "1 iş günü"],
+      "forbidden_facts": []
+    },
+    {
+      "utterance_id": "06-iade-suresi",
+      "text": "İade süreniz ne kadar?",
+      "expected_intent": "return_policy_lookup",
+      "tool_required": true,
+      "expected_source_docs": ["kargo-iade.md"],
+      "required_facts": ["on dört gün", "14 gün"],
+      "forbidden_facts": []
+    },
+    {
+      "utterance_id": "07-thanks-hangup",
+      "text": "Teşekkür ederim, iyi günler.",
+      "expected_intent": "closing",
+      "tool_required": false,
+      "expected_source_docs": [],
+      "required_facts": [],
+      "forbidden_facts": []
+    }
+  ]
+}

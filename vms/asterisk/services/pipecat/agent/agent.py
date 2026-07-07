@@ -693,12 +693,14 @@ async def on_session(session: AudioSocketSession) -> None:
         await asyncio.sleep(0.05)
     call_id = session.uuid or "unknown-audiosocket-call"
     call_ctx = trace_events.CallContext(LANE, call_id)
+    run_id = trace_events.current_run_id()
     _trace(
         lane=LANE,
         call_id=call_ctx.call_id,
         stage="call",
         event="call.started",
         provider="asterisk-audiosocket",
+        run_id=run_id,
         payload={
             "uuid": session.uuid,
             "asterisk_audiosocket_uuid": session.uuid,
@@ -713,6 +715,7 @@ async def on_session(session: AudioSocketSession) -> None:
         stage="call",
         event="profile.loaded",
         provider="pipecat",
+        run_id=run_id,
         payload=voicebot_profile.startup_metadata(
             lane=LANE,
             system_prompt=SYSTEM_PROMPT,

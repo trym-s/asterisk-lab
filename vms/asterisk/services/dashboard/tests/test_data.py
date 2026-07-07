@@ -201,6 +201,221 @@ class TranscriberStatusTest(unittest.TestCase):
             self.assertTrue(by_file["b.txt".replace(".txt", ".wav")])
 
 
+def _profile_payload(**overrides: object) -> dict:
+    payload = {
+        "model_profile": {"name": "default-openai-telephony"},
+        "prompt_hash": "hash-prompt",
+        "tool_schema_hash": "hash-tools",
+        "corpus": {"hash": "hash-corpus"},
+        "repo_revision": "abc123",
+    }
+    payload.update(overrides)
+    return payload
+
+
+class FairnessGateTest(unittest.TestCase):
+    def test_matching_profiles_pass_but_media_path_stays_not_enforced(self) -> None:
+        events = [
+            trace_events.build_event(
+                lane="livekit", call_id="c1", stage="call", event="profile.loaded",
+                ts=1.0, payload=_profile_payload(), run_id="run-1",
+            ),
+            trace_events.build_event(
+                lane="pipecat", call_id="c2", stage="call", event="profile.loaded",
+                ts=1.0, payload=_profile_payload(), run_id="run-1",
+            ),
+        ]
+        gate = data.fairness_gate(events, usage_rows=[], run_id="run-1")
+        by_check = {row["check"]: row for row in gate["rows"]}
+        self.assertEqual(by_check["model_profile"]["status"], "pass")
+        self.assertEqual(by_check["prompt_hash"]["status"], "pass")
+        self.assertEqual(by_check["audio_media_path"]["status"], "not_enforced")
+        self.assertFalse(gate["framework_isolated"])
+
+    def test_mismatched_prompt_hash_fails(self) -> None:
+        events = [
+            trace_events.build_event(
+                lane="livekit", call_id="c1", stage="call", event="profile.loaded",
+                ts=1.0, payload=_profile_payload(prompt_hash="a"),
+            ),
+            trace_events.build_event(
+                lane="pipecat", call_id="c2", stage="call", event="profile.loaded",
+                ts=1.0, payload=_profile_payload(prompt_hash="b"),
+            ),
+        ]
+        gate = data.fairness_gate(events)
+        by_check = {row["check"]: row for row in gate["rows"]}
+        self.assertEqual(by_check["prompt_hash"]["status"], "fail")
+
+    def test_missing_lane_is_not_comparable(self) -> None:
+        events = [
+            trace_events.build_event(
+                lane="livekit", call_id="c1", stage="call", event="profile.loaded",
+                ts=1.0, payload=_profile_payload(),
+            ),
+        ]
+        gate = data.fairness_gate(events)
+        self.assertEqual(gate["rows"][0]["status"], "not_comparable")
+        self.assertFalse(gate["framework_isolated"])
+
+
+class PairedQualityTest(unittest.TestCase):
+    EXPECTED = {
+        "03-havlu-fiyat": {
+            "utterance_id": "03-havlu-fiyat",
+            "text": "Banyo havlusu ne kadar?",
+            "tool_required": True,
+            "expected_source_docs": ["urunler.md"],
+            "required_facts": ["390"],
+            "forbidden_facts": [],
+        },
+    }
+
+    def test_matches_turn_to_utterance_and_scores_tool_and_facts(self) -> None:
+        events = [
+            trace_events.build_event(
+                lane="livekit", call_id="c1", turn_id="t1", stage="stt",
+                event="final_transcript", ts=1.0, payload={"text": "Banyo havlusu ne kadar?"},
+            ),
+            trace_events.build_event(
+                lane="livekit", call_id="c1", turn_id="t1", stage="tool",
+                event="lookup_docs.request", ts=1.1, payload={"query": "havlu"},
+            ),
+            trace_events.build_event(
+                lane="livekit", call_id="c1", turn_id="t1", stage="tool",
+                event="lookup_docs.result", ts=1.2, payload={"result": "[urunler.md §2]..."},
+            ),
+            trace_events.build_event(
+                lane="livekit", call_id="c1", turn_id="t1", stage="llm",
+                event="response", ts=1.3, payload={"text": "Banyo havlusu 390 liradır."},
+            ),
+        ]
+        result = data.paired_quality(events, self.EXPECTED)
+        row = next(r for r in result["rows"] if r["utterance_id"] == "03-havlu-fiyat")
+        self.assertIsNotNone(row["livekit"])
+        self.assertTrue(row["livekit"]["tool_call_correct"])
+        self.assertTrue(row["livekit"]["source_hit"])
+        self.assertTrue(row["livekit"]["required_facts_present"])
+        self.assertIsNone(row["pipecat"])
+
+    def test_unmatched_low_overlap_text_needs_review(self) -> None:
+        events = [
+            trace_events.build_event(
+                lane="pipecat", call_id="c1", turn_id="t1", stage="stt",
+                event="final_transcript", ts=1.0, payload={"text": "tamamen alakasiz bir cumle"},
+            ),
+        ]
+        result = data.paired_quality(events, self.EXPECTED)
+        unmatched = next(r for r in result["rows"] if r["utterance_id"] == "unmatched")
+        self.assertTrue(unmatched["pipecat"]["needs_review"])
+
+
+class LatencyDecisionTest(unittest.TestCase):
+    def _turn_events(self, lane: str, call_id: str, turn_id: str, stt_ms: float) -> list[dict]:
+        return [
+            trace_events.build_event(
+                lane=lane, call_id=call_id, turn_id=turn_id, stage="stt",
+                event="final_transcript", ts=0.0, payload={},
+            ),
+            trace_events.build_event(
+                lane=lane, call_id=call_id, turn_id=turn_id, stage="llm",
+                event="request", ts=stt_ms / 1000, payload={},
+            ),
+        ]
+
+    def test_p95_suppressed_below_sample_floor(self) -> None:
+        events = []
+        for i in range(5):
+            events.extend(self._turn_events("livekit", "c1", f"t{i}", 100.0 + i))
+        result = data.latency_decision(events, min_n=20)
+        stt_row = next(r for r in result["lanes"]["livekit"] if r["stage"] == "stt")
+        self.assertEqual(stt_row["n"], 5)
+        self.assertIsNotNone(stt_row["p50_ms"])
+        self.assertIsNone(stt_row["p95_ms"])
+
+    def test_p95_renders_at_or_above_sample_floor(self) -> None:
+        events = []
+        for i in range(20):
+            events.extend(self._turn_events("livekit", "c1", f"t{i}", 100.0 + i))
+        result = data.latency_decision(events, min_n=20)
+        stt_row = next(r for r in result["lanes"]["livekit"] if r["stage"] == "stt")
+        self.assertEqual(stt_row["n"], 20)
+        self.assertIsNotNone(stt_row["p95_ms"])
+
+
+class ReliabilitySummaryTest(unittest.TestCase):
+    def test_comparable_outcomes_and_lane_specific_diagnostics_stay_separate(self) -> None:
+        events = [
+            trace_events.build_event(
+                lane="livekit", call_id="c1", stage="call", event="call.started", ts=1.0,
+            ),
+            trace_events.build_event(
+                lane="livekit", call_id="c1", stage="call", event="call.ended", ts=5.0,
+            ),
+            trace_events.build_event(
+                lane="livekit", call_id="c1", turn_id="t1", stage="stt",
+                event="final_transcript", ts=2.0, payload={"text": "merhaba"},
+            ),
+            trace_events.build_event(
+                lane="livekit", call_id="c1", turn_id="t1", stage="llm",
+                event="response", ts=2.1, payload={"text": "hi"},
+            ),
+            trace_events.build_event(
+                lane="livekit", call_id="c1", turn_id="t1", stage="tts",
+                event="request", ts=2.2, payload={},
+            ),
+            trace_events.build_event(
+                lane="pipecat", call_id="c2", stage="call", event="call.started", ts=1.0,
+            ),
+            trace_events.build_event(
+                lane="pipecat", call_id="c2", turn_id="t1", stage="stt",
+                event="echo_filtered", ts=2.0, payload={"text": "echo"},
+            ),
+        ]
+        result = data.reliability_summary(events, now=10.0)
+        self.assertEqual(result["comparable_outcomes"]["livekit"]["calls"], 1)
+        self.assertEqual(result["comparable_outcomes"]["livekit"]["call_completed"], 1)
+        self.assertEqual(result["comparable_outcomes"]["livekit"]["no_missing_stage"], 1)
+        self.assertEqual(result["lane_specific_diagnostics"]["pipecat"]["echo_filtered"], 1)
+        self.assertEqual(result["lane_specific_diagnostics"]["livekit"], {})
+
+
+class CostNormalizedTest(unittest.TestCase):
+    def test_measured_and_estimated_rows_stay_separate(self) -> None:
+        events = [
+            trace_events.build_event(
+                lane="livekit", call_id="c1", stage="call", event="call.started", ts=1.0,
+            ),
+            trace_events.build_event(
+                lane="livekit", call_id="c1", turn_id="t1", stage="stt",
+                event="final_transcript", ts=1.1, payload={},
+            ),
+            trace_events.build_event(
+                lane="pipecat", call_id="c2", stage="call", event="call.started", ts=1.0,
+            ),
+            trace_events.build_event(
+                lane="pipecat", call_id="c2", turn_id="t1", stage="stt",
+                event="final_transcript", ts=1.1, payload={},
+            ),
+        ]
+        usage_rows = [
+            {
+                "ts": 1.0, "lane": "livekit", "call_id": "c1", "provider": "openai",
+                "op": "stt", "units": 10.0, "unit_type": "seconds", "estimated_usd": 0.001,
+            },
+            {
+                "ts": 1.0, "lane": "pipecat", "call_id": "c2", "provider": "openai",
+                "op": "chat", "units": 5.0, "unit_type": "tokens_estimated", "estimated_usd": 0.0002,
+            },
+        ]
+        result = data.cost_normalized(usage_rows, events)
+        by_lane = {row["lane"]: row for row in result["rows"]}
+        self.assertEqual(by_lane["livekit"]["evidence"], "measured")
+        self.assertEqual(by_lane["pipecat"]["evidence"], "estimated")
+        self.assertAlmostEqual(by_lane["livekit"]["total_usd"], 0.001)
+        self.assertAlmostEqual(by_lane["pipecat"]["total_usd"], 0.0002)
+
+
 class ZabbixClientTest(unittest.TestCase):
     def test_unavailable_summary_keeps_host_rows(self) -> None:
         summary = zabbix_client.unavailable_summary("missing token")

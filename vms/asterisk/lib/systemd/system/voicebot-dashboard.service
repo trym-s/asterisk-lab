@@ -15,6 +15,7 @@ Environment=VOICEBOT_DASHBOARD_BIND=127.0.0.1
 Environment=VOICEBOT_DASHBOARD_PORT=8099
 Environment=VOICEBOT_DASHBOARD_REFRESH_S=5
 Environment=VOICEBOT_COMMON_DIR=/opt/voicebot-dashboard/common
+Environment=VOICEBOT_DASHBOARD_EXPECTED_CORPUS_PATH=/opt/voicebot-dashboard/fixtures/expected-answers.json
 EnvironmentFile=-/etc/asterisk-lab/env
 
 # Filesystem isolation: the dashboard only ever reads voicebot state and the

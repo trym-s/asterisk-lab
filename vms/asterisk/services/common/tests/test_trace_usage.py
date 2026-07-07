@@ -45,6 +45,30 @@ class TraceEventsTest(unittest.TestCase):
                 event="bad",
             )
 
+    def test_run_id_is_additive_and_omitted_when_absent(self) -> None:
+        with_run = trace_events.build_event(
+            lane="livekit", call_id="call-1", stage="call", event="call.started",
+            run_id="run-42",
+        )
+        self.assertEqual(with_run["run_id"], "run-42")
+        trace_events.validate_event(with_run)
+
+        without_run = trace_events.build_event(
+            lane="livekit", call_id="call-1", stage="call", event="call.started",
+        )
+        self.assertNotIn("run_id", without_run)
+
+    def test_current_run_id_reads_env_var(self) -> None:
+        old = os.environ.get("VOICEBOT_RUN_ID")
+        os.environ["VOICEBOT_RUN_ID"] = "run-xyz"
+        try:
+            self.assertEqual(trace_events.current_run_id(), "run-xyz")
+        finally:
+            if old is None:
+                os.environ.pop("VOICEBOT_RUN_ID", None)
+            else:
+                os.environ["VOICEBOT_RUN_ID"] = old
+
 
 class UsageTest(unittest.TestCase):
     def test_canonical_usage_row_keeps_backward_compatible_fields(self) -> None:

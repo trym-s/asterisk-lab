@@ -284,6 +284,7 @@ async def entrypoint(ctx: JobContext) -> None:
         logger.warning("livekit disconnect hook registration failed: %s", e)
 
     logger.info("joined room=%s join_ms=%d", ctx.room.name, join_ms)
+    run_id = trace_events.current_run_id()
     _trace(
         lane=LANE,
         call_id=call_ctx.call_id,
@@ -292,6 +293,7 @@ async def entrypoint(ctx: JobContext) -> None:
         provider="livekit",
         duration_ms=join_ms,
         payload={"room": ctx.room.name},
+        run_id=run_id,
     )
     _trace(
         lane=LANE,
@@ -299,6 +301,7 @@ async def entrypoint(ctx: JobContext) -> None:
         stage="call",
         event="profile.loaded",
         provider="livekit",
+        run_id=run_id,
         payload=voicebot_profile.startup_metadata(
             lane=LANE,
             system_prompt=SYSTEM_PROMPT,

@@ -13,6 +13,7 @@ import re
 import shlex
 import subprocess
 import time
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -544,6 +545,485 @@ def lane_parity(events: list[dict[str, Any]], usage_rows: list[dict[str, Any]]) 
         )
     result.sort(key=lambda r: r["lane"])
     return {"lanes": result}
+
+
+LANES = ("livekit", "pipecat")
+COMPARISON_ECHO_EVENTS = {"echo_filtered", "barge_in.stop_bot_audio"}
+
+
+# ---- LiveKit vs Pipecat fair comparison ----------------------------
+
+
+def _filter_run(events: list[dict[str, Any]], run_id: str | None) -> list[dict[str, Any]]:
+    if run_id is None:
+        return events
+    return [row for row in events if row.get("run_id") == run_id]
+
+
+def _dig(payload: dict[str, Any], path: list[str]) -> Any:
+    cur: Any = payload
+    for key in path:
+        if not isinstance(cur, dict) or key not in cur:
+            return None
+        cur = cur[key]
+    return cur
+
+
+def _fold(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text.lower())
+    return "".join(c for c in normalized if not unicodedata.combining(c))
+
+
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+
+def _tokens(text: str) -> set[str]:
+    return set(_WORD_RE.findall(_fold(text or "")))
+
+
+def _token_overlap(a: str, b: str) -> float:
+    left, right = _tokens(a), _tokens(b)
+    if not left or not right:
+        return 0.0
+    return len(left & right) / min(len(left), len(right))
+
+
+def _fact_present(text: str, fact: str) -> bool:
+    return bool(fact) and _fold(fact) in _fold(text or "")
+
+
+def load_expected_corpus(path: Path | None) -> dict[str, dict[str, Any]]:
+    """Read the read-only expected-answer fixture (Paired Quality panel)."""
+    if not path or not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    rows = payload.get("utterances", [])
+    return {row["utterance_id"]: row for row in rows if row.get("utterance_id")}
+
+
+def match_utterance(
+    stt_text: str,
+    expected_corpus: dict[str, dict[str, Any]],
+    min_overlap: float = 0.34,
+) -> tuple[str | None, float]:
+    """Best-effort correlation of a turn's STT text to a scripted utterance.
+
+    The agents don't stamp turns with utterance_id today (the governing spec's
+    Architecture Contract only mandates run_id on call/profile.loaded), so
+    this matches the transcribed text against the fixture's scripted text
+    by token overlap. Below `min_overlap` the turn is "unmatched" rather
+    than force-mapped, so a bad transcript reads as missing evidence, not a
+    silently wrong pairing.
+    """
+    if not stt_text or not expected_corpus:
+        return None, 0.0
+    best_id, best_score = None, 0.0
+    for utterance_id, row in expected_corpus.items():
+        score = _token_overlap(stt_text, row.get("text", ""))
+        if score > best_score:
+            best_id, best_score = utterance_id, score
+    if best_score < min_overlap:
+        return None, best_score
+    return best_id, best_score
+
+
+def _latest_profile_event(
+    events: list[dict[str, Any]], lane: str, run_id: str | None
+) -> dict[str, Any] | None:
+    candidates = [
+        row
+        for row in events
+        if row["lane"] == lane
+        and row["stage"] == "call"
+        and row["event"] == "profile.loaded"
+        and (run_id is None or row.get("run_id") == run_id)
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda row: row["ts"])
+
+
+def _usage_evidence_kind(usage_rows: list[dict[str, Any]]) -> str | None:
+    """'measured' | 'estimated' | 'mixed' | None (no usage rows)."""
+    if not usage_rows:
+        return None
+    flags = {
+        "estimated" if ("estimated" in str(row.get("unit_type", "")) or row.get("estimated")) else "measured"
+        for row in usage_rows
+    }
+    return "mixed" if len(flags) > 1 else flags.pop()
+
+
+def fairness_gate(
+    events: list[dict[str, Any]],
+    usage_rows: list[dict[str, Any]] | None = None,
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    """Per-run pass/warn/not_enforced/not_comparable status rows.
+
+    No headline "winner" ever renders from this data: `framework_isolated`
+    only turns true once every row passes, and the media-path/VAD/
+    framework-version rows are pinned to `not_enforced` by this spec's
+    Non-Goals, so it always reads as an "as-deployed" observational
+    comparison today.
+    """
+    profiles = {lane: _latest_profile_event(events, lane, run_id) for lane in LANES}
+    present = [lane for lane in LANES if profiles[lane] is not None]
+    rows: list[dict[str, Any]] = []
+
+    def add(check: str, status: str, detail: str) -> None:
+        rows.append({"check": check, "status": status, "detail": detail})
+
+    if len(present) < 2:
+        missing = [lane for lane in LANES if lane not in present]
+        add(
+            "run_pairing",
+            "not_comparable",
+            f"missing profile.loaded for: {', '.join(missing)}"
+            + (f" (run_id={run_id})" if run_id else " (no run_id filter)"),
+        )
+        return {"run_id": run_id, "lanes_present": present, "rows": rows, "framework_isolated": False}
+
+    lk_payload = profiles["livekit"]["payload"]
+    pc_payload = profiles["pipecat"]["payload"]
+
+    def hash_check(check: str, path: list[str], label: str) -> None:
+        lk_val = _dig(lk_payload, path)
+        pc_val = _dig(pc_payload, path)
+        if lk_val is None or pc_val is None:
+            add(check, "warn", f"{label}: missing on one or both lanes")
+        elif lk_val == pc_val:
+            add(check, "pass", f"{label} matches")
+        else:
+            add(check, "fail", f"{label} differs between lanes")
+
+    hash_check("model_profile", ["model_profile"], "model profile")
+    hash_check("prompt_hash", ["prompt_hash"], "prompt hash")
+    hash_check("tool_schema_hash", ["tool_schema_hash"], "tool schema hash")
+    hash_check("corpus_hash", ["corpus", "hash"], "corpus hash")
+    hash_check("repo_revision", ["repo_revision"], "repo revision")
+
+    add(
+        "run_pairing",
+        "pass",
+        "both lanes present" + (f" for run_id={run_id}" if run_id else " (latest per lane, no run_id filter)"),
+    )
+    add(
+        "audio_media_path",
+        "not_enforced",
+        "livekit: SIP GW -> SFU (opus/g722/ulaw negotiable); pipecat: AudioSocket TCP fixed 8 kHz "
+        "slin16. Not forced to parity by this spec; see Follow-Ups.",
+    )
+    add(
+        "vad_endpointing_config",
+        "not_enforced",
+        "VAD/endpointing tuning is not captured in profile.loaded; not compared.",
+    )
+
+    pipecat_echo_events = {
+        row["event"]
+        for row in events
+        if row["lane"] == "pipecat" and row["event"] in COMPARISON_ECHO_EVENTS
+    }
+    add(
+        "interruption_echo_instrumentation",
+        "warn",
+        (
+            f"pipecat emits {sorted(pipecat_echo_events)} discrete echo/barge-in events; "
+            "livekit has no equivalent (see Reliability panel's lane-specific row)."
+            if pipecat_echo_events
+            else "neither lane has emitted echo/barge-in events yet."
+        ),
+    )
+    add(
+        "framework_dependency_version",
+        "not_enforced",
+        "framework/runtime version is not captured in profile.loaded; not compared.",
+    )
+
+    lk_kind = _usage_evidence_kind([r for r in (usage_rows or []) if r.get("lane") == "livekit"])
+    pc_kind = _usage_evidence_kind([r for r in (usage_rows or []) if r.get("lane") == "pipecat"])
+    if lk_kind is None or pc_kind is None:
+        add("usage_evidence_parity", "warn", "usage rows missing for one or both lanes")
+    elif lk_kind == pc_kind and lk_kind != "mixed":
+        add("usage_evidence_parity", "warn" if lk_kind == "estimated" else "pass", f"both lanes report {lk_kind} usage")
+    else:
+        add(
+            "usage_evidence_parity",
+            "warn",
+            f"livekit={lk_kind}, pipecat={pc_kind} - not blended into one number (see Cost panel).",
+        )
+
+    framework_isolated = all(row["status"] == "pass" for row in rows)
+    return {"run_id": run_id, "lanes_present": present, "rows": rows, "framework_isolated": framework_isolated}
+
+
+def paired_quality(
+    events: list[dict[str, Any]],
+    expected_corpus: dict[str, dict[str, Any]],
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    """Deterministic/rubric scoring per utterance, both lanes side by side."""
+    scoped = _filter_run(events, run_id)
+    grouped = group_turns(scoped)
+
+    best_by_lane: dict[str, dict[str, dict[str, Any]]] = {lane: {} for lane in LANES}
+    for (lane, call_id, turn_id), turn_events in grouped.items():
+        if lane not in LANES:
+            continue
+        stt_text = _first_text(turn_events, "stt", "final_transcript")
+        if not stt_text:
+            continue
+        utterance_id, score = match_utterance(stt_text, expected_corpus)
+        key = utterance_id or "unmatched"
+        expected = expected_corpus.get(key, {})
+
+        tool_called = _event_present(turn_events, "tool", "lookup_docs.request")
+        tool_result_text = " ".join(
+            str(row.get("payload", {}).get("result", ""))
+            for row in turn_events
+            if row["stage"] == "tool" and row["event"] == "lookup_docs.result"
+        )
+        llm_text = _first_text(turn_events, "llm", "response") or ""
+
+        expected_docs = expected.get("expected_source_docs") or []
+        source_hit = any(doc in tool_result_text for doc in expected_docs) if expected_docs else None
+
+        required_facts = expected.get("required_facts") or []
+        required_present = (
+            any(_fact_present(llm_text, fact) for fact in required_facts) if required_facts else None
+        )
+        forbidden_facts = expected.get("forbidden_facts") or []
+        forbidden_absent = (
+            not any(_fact_present(llm_text, fact) for fact in forbidden_facts) if forbidden_facts else None
+        )
+        tool_required = expected.get("tool_required")
+        tool_call_correct = (tool_called == tool_required) if tool_required is not None else None
+
+        row_result = {
+            "lane": lane,
+            "call_id": call_id,
+            "turn_id": turn_id,
+            "utterance_id": key,
+            "match_score": round(score, 2),
+            "stt_text": stt_text,
+            "llm_text": llm_text or None,
+            "tool_called": tool_called,
+            "tool_required": tool_required,
+            "tool_call_correct": tool_call_correct,
+            "source_hit": source_hit,
+            "required_facts_present": required_present,
+            "forbidden_facts_absent": forbidden_absent,
+            "echo_or_extra_turn": _event_present(turn_events, "stt", "echo_filtered"),
+            "needs_review": key == "unmatched" or not expected,
+        }
+        existing = best_by_lane[lane].get(key)
+        if existing is None or score > existing["match_score"]:
+            best_by_lane[lane][key] = row_result
+
+    all_ids = sorted(set(expected_corpus) | set(best_by_lane["livekit"]) | set(best_by_lane["pipecat"]))
+    rows = []
+    for utterance_id in all_ids:
+        expected = expected_corpus.get(utterance_id, {})
+        rows.append(
+            {
+                "utterance_id": utterance_id,
+                "expected_text": expected.get("text"),
+                "expected_intent": expected.get("expected_intent"),
+                "livekit": best_by_lane["livekit"].get(utterance_id),
+                "pipecat": best_by_lane["pipecat"].get(utterance_id),
+            }
+        )
+    return {"run_id": run_id, "rows": rows}
+
+
+def _percentile(sorted_values: list[float], pct: float) -> float | None:
+    if not sorted_values:
+        return None
+    if len(sorted_values) == 1:
+        return sorted_values[0]
+    k = (len(sorted_values) - 1) * pct
+    lower = int(k)
+    upper = min(lower + 1, len(sorted_values) - 1)
+    if lower == upper:
+        return sorted_values[lower]
+    return sorted_values[lower] + (sorted_values[upper] - sorted_values[lower]) * (k - lower)
+
+
+def latency_decision(
+    events: list[dict[str, Any]],
+    run_id: str | None = None,
+    min_n: int = 20,
+) -> dict[str, Any]:
+    """Per-stage p50 (always) / p95 (gated by min_n) with N and source label."""
+    scoped = _filter_run(events, run_id)
+    grouped = group_turns(scoped)
+
+    samples: dict[tuple[str, str], list[tuple[float, str]]] = {}
+    for (lane, _call_id, _turn_id), turn_events in grouped.items():
+        if lane not in LANES:
+            continue
+        for stage, info in derive_stage_latency(turn_events).items():
+            if info["ms"] is None:
+                continue
+            samples.setdefault((lane, stage), []).append((info["ms"], info["source"]))
+
+    stages_present = sorted(
+        {stage for _lane, stage in samples},
+        key=lambda s: STAGE_ORDER.index(s) if s in STAGE_ORDER else len(STAGE_ORDER),
+    )
+    result: dict[str, Any] = {"run_id": run_id, "min_n": min_n, "lanes": {}}
+    for lane in LANES:
+        stage_rows = []
+        for stage in stages_present:
+            pairs = samples.get((lane, stage), [])
+            if not pairs:
+                continue
+            values = sorted(v for v, _source in pairs)
+            sources = {source for _v, source in pairs}
+            source_label = "measured" if sources == {"measured"} else ("approx" if sources == {"approx"} else "mixed")
+            n = len(values)
+            stage_rows.append(
+                {
+                    "stage": stage,
+                    "n": n,
+                    "p50_ms": round(_percentile(values, 0.5), 1),
+                    "p95_ms": round(_percentile(values, 0.95), 1) if n >= min_n else None,
+                    "source": source_label,
+                }
+            )
+        result["lanes"][lane] = stage_rows
+    return result
+
+
+def reliability_summary(
+    events: list[dict[str, Any]],
+    run_id: str | None = None,
+    *,
+    expected_turns_per_call: int = 1,
+    now: float | None = None,
+    active_stale_s: int = ACTIVE_CALL_STALE_S,
+) -> dict[str, Any]:
+    """Two-row payload: comparable neutral outcomes vs lane-specific diagnostics.
+
+    `expected_turns_per_call` defaults to 1: run-suite.sh dials one call per
+    scripted utterance today (see test-caller/run-suite.sh), so a call
+    "reaching its expected turns" means completing its one turn, not
+    covering the whole corpus in a single call. A multi-turn scripted call
+    would pass a higher value.
+    """
+    scoped = _filter_run(events, run_id)
+    calls = list_calls(scoped, now=now, active_stale_s=active_stale_s)
+
+    events_by_call: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in scoped:
+        events_by_call.setdefault((row["lane"], row["call_id"]), []).append(row)
+
+    turns_by_call: dict[tuple[str, str], list[list[dict[str, Any]]]] = {}
+    for (lane, call_id, _turn_id), turn_events in group_turns(scoped).items():
+        turns_by_call.setdefault((lane, call_id), []).append(turn_events)
+
+    comparable = {
+        lane: {
+            "calls": 0,
+            "call_completed": 0,
+            "expected_turns_reached": 0,
+            "no_missing_stage": 0,
+            "no_error_event": 0,
+            "no_stale_call": 0,
+            "no_empty_final_transcript": 0,
+            "no_duplicate_extra_turn": 0,
+        }
+        for lane in LANES
+    }
+    lane_specific: dict[str, dict[str, int]] = {lane: {} for lane in LANES}
+
+    for call in calls:
+        lane = call["lane"]
+        if lane not in comparable:
+            continue
+        counts = comparable[lane]
+        counts["calls"] += 1
+        key = (lane, call["call_id"])
+        call_events = events_by_call.get(key, [])
+        turn_groups = turns_by_call.get(key, [])
+
+        if call["call_ended"]:
+            counts["call_completed"] += 1
+        if call["turn_count"] >= expected_turns_per_call:
+            counts["expected_turns_reached"] += 1
+        missing_stage = (
+            any(not {"stt", "llm", "tts"} <= {row["stage"] for row in te} for te in turn_groups)
+            if turn_groups
+            else True
+        )
+        if not missing_stage:
+            counts["no_missing_stage"] += 1
+        if not any(row["stage"] == "error" for row in call_events):
+            counts["no_error_event"] += 1
+        if not call["stale_without_end"]:
+            counts["no_stale_call"] += 1
+        empty_transcript = any(
+            not (_first_text(te, "stt", "final_transcript") or "").strip() for te in turn_groups
+        )
+        if not empty_transcript:
+            counts["no_empty_final_transcript"] += 1
+        duplicate_extra = call["turn_count"] > expected_turns_per_call
+        if not duplicate_extra:
+            counts["no_duplicate_extra_turn"] += 1
+
+        for row in call_events:
+            if row["event"] in COMPARISON_ECHO_EVENTS:
+                lane_specific[lane][row["event"]] = lane_specific[lane].get(row["event"], 0) + 1
+
+    return {"run_id": run_id, "comparable_outcomes": comparable, "lane_specific_diagnostics": lane_specific}
+
+
+def cost_normalized(
+    usage_rows: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    """Cost per successful turn and per corpus run, measured vs estimated kept separate.
+
+    usage.jsonl rows don't carry run_id (only events.jsonl does, per this
+    spec's Architecture Contract); a run is instead scoped through the
+    call_ids that appear in the run-scoped events, then usage rows are
+    filtered by call_id.
+    """
+    scoped_events = _filter_run(events, run_id)
+    call_ids = {row["call_id"] for row in scoped_events} if run_id is not None else None
+    scoped_usage = usage_rows if call_ids is None else [row for row in usage_rows if row.get("call_id") in call_ids]
+
+    calls = list_calls(scoped_events)
+    # cost_summary groups finer than lane; re-aggregate to one total per lane.
+    lane_totals: dict[str, float] = {}
+    for row in cost_summary(scoped_usage)["rows"]:
+        if row["estimated_usd"] is None:
+            continue
+        lane_totals[row["lane"]] = lane_totals.get(row["lane"], 0.0) + row["estimated_usd"]
+
+    rows = []
+    for lane in LANES:
+        lane_usage = [row for row in scoped_usage if row.get("lane") == lane]
+        lane_calls = [call for call in calls if call["lane"] == lane]
+        turns = sum(call["turn_count"] for call in lane_calls)
+        total_cost = round(lane_totals.get(lane, 0.0), 6)
+        rows.append(
+            {
+                "lane": lane,
+                "evidence": _usage_evidence_kind(lane_usage) or "unknown",
+                "total_usd": total_cost,
+                "calls": len(lane_calls),
+                "turns": turns,
+                "cost_per_turn_usd": round(total_cost / turns, 6) if turns else None,
+                "cost_per_corpus_run_usd": total_cost if lane_calls else None,
+            }
+        )
+    return {"run_id": run_id, "rows": rows}
 
 
 def parse_pjsip_endpoints(output: str) -> dict[str, Any]:

@@ -84,6 +84,17 @@ def new_turn_id(index: int) -> str:
     return f"turn-{index:04d}"
 
 
+def current_run_id() -> str | None:
+    """The operator-supplied comparison run id, if set.
+
+    The operator sets VOICEBOT_RUN_ID identically before invoking
+    run-suite.sh against each lane in turn, so both lanes' events carry the
+    same value and the dashboard can pair them. Unset by default: a call
+    without a run_id simply falls outside any paired comparison view.
+    """
+    return os.environ.get("VOICEBOT_RUN_ID") or None
+
+
 class CallContext:
     """Small per-call turn id allocator shared by agent callbacks."""
 
@@ -111,6 +122,7 @@ def build_event(
     duration_ms: float | int | None = None,
     payload: dict[str, Any] | None = None,
     ts: float | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     if stage not in VALID_STAGES:
         raise ValueError(f"invalid voicebot trace stage: {stage!r}")
@@ -126,6 +138,10 @@ def build_event(
         "duration_ms": duration_ms,
         "payload": redact(payload or {}),
     }
+    # Additive grouping key: only attached when the caller supplies
+    # one, so existing rows/tests that don't pass run_id are unaffected.
+    if run_id is not None:
+        row["run_id"] = run_id
     missing = REQUIRED_KEYS - row.keys()
     if missing:
         raise ValueError(f"trace event missing required keys: {sorted(missing)}")
@@ -144,6 +160,7 @@ def record_event(
     duration_ms: float | int | None = None,
     payload: dict[str, Any] | None = None,
     path: Path | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     row = build_event(
         lane=lane,
@@ -155,6 +172,7 @@ def record_event(
         model=model,
         duration_ms=duration_ms,
         payload=payload,
+        run_id=run_id,
     )
     target = path or default_events_path()
     target.parent.mkdir(parents=True, exist_ok=True)

@@ -40,6 +40,9 @@ $SUDO install -d -m 0755 "$APPDIR/common"
 for f in trace_events.py usage.py usage_summary.py voicebot_profile.py; do
   $SUDO install -m 0644 "$HERE/../common/$f" "$APPDIR/common/$f"
 done
+$SUDO install -d -m 0755 "$APPDIR/fixtures"
+$SUDO install -m 0644 "$HERE/../test-caller/expected-answers.json" \
+  "$APPDIR/fixtures/expected-answers.json"
 $SUDO find "$APPDIR/app" -name '__pycache__' -prune -exec rm -rf {} +
 $SUDO install -m 0644 "$HERE/pyproject.toml" "$APPDIR/pyproject.toml"
 $SUDO install -m 0644 "$HERE/uv.lock" "$APPDIR/uv.lock"

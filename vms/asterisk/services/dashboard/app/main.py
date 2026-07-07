@@ -118,6 +118,11 @@ def page_parity(request: Request):
     return templates.TemplateResponse(request, "parity.html", _page_context(request))
 
 
+@app.get("/comparison", response_class=HTMLResponse, dependencies=[Depends(require_auth)])
+def page_comparison(request: Request):
+    return templates.TemplateResponse(request, "comparison.html", _page_context(request))
+
+
 @app.get("/cost", response_class=HTMLResponse, dependencies=[Depends(require_auth)])
 def page_cost(request: Request):
     return templates.TemplateResponse(request, "cost.html", _page_context(request))
@@ -237,6 +242,46 @@ def api_cost_timeseries(since: str | None = None, bucket: str | None = None):
 @app.get("/api/transcriber", dependencies=[Depends(require_auth)])
 def api_transcriber():
     return data.transcriber_status(settings.monitor_dir)
+
+
+# ---- LiveKit vs Pipecat fair comparison ----------------------------
+
+
+@app.get("/api/comparison/fairness", dependencies=[Depends(require_auth)])
+def api_comparison_fairness(run_id: str | None = None):
+    events = data.load_events(settings.events_path)
+    usage_rows = data.load_usage(settings.usage_path)
+    return data.fairness_gate(events, usage_rows, run_id)
+
+
+@app.get("/api/comparison/quality", dependencies=[Depends(require_auth)])
+def api_comparison_quality(run_id: str | None = None):
+    events = data.load_events(settings.events_path)
+    expected_corpus = data.load_expected_corpus(settings.expected_corpus_path)
+    return data.paired_quality(events, expected_corpus, run_id)
+
+
+@app.get("/api/comparison/latency", dependencies=[Depends(require_auth)])
+def api_comparison_latency(run_id: str | None = None):
+    events = data.load_events(settings.events_path)
+    return data.latency_decision(events, run_id, settings.latency_min_n)
+
+
+@app.get("/api/comparison/reliability", dependencies=[Depends(require_auth)])
+def api_comparison_reliability(run_id: str | None = None):
+    events = data.load_events(settings.events_path)
+    return data.reliability_summary(
+        events,
+        run_id,
+        active_stale_s=settings.active_call_stale_s,
+    )
+
+
+@app.get("/api/comparison/cost", dependencies=[Depends(require_auth)])
+def api_comparison_cost(run_id: str | None = None):
+    events = data.load_events(settings.events_path)
+    usage_rows = data.load_usage(settings.usage_path)
+    return data.cost_normalized(usage_rows, events, run_id)
 
 
 @app.get("/api/healthz")

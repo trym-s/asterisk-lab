@@ -1,0 +1,281 @@
+{% extends "base.html" %}
+{% block title %}Comparison - Voicebot Console{% endblock %}
+{% block content %}
+<div class="console-page-head">
+  <div>
+    <div class="eyebrow">Gated benchmark report</div>
+    <h1 class="page-title">LiveKit vs Pipecat</h1>
+  </div>
+  <div class="control-strip">
+    <label for="run-id-input">run_id</label>
+    <input id="run-id-input" class="form-control" type="text" placeholder="latest per lane" style="width: 14rem;">
+    <button id="run-id-apply" class="btn btn-sm btn-outline-secondary">Apply</button>
+  </div>
+</div>
+
+<div id="comparison-banner" class="comparison-banner">Loading fairness gate...</div>
+
+<section class="console-panel mb-3">
+  <div class="panel-head">
+    <h2>Fairness gate</h2>
+    <span class="panel-kicker" id="fairness-kicker">polling</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table console-table">
+      <thead>
+        <tr><th>Check</th><th>Status</th><th>Detail</th></tr>
+      </thead>
+      <tbody id="fairness-body">
+        <tr><td colspan="3" class="muted-cell">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="console-panel mb-3">
+  <div class="panel-head">
+    <h2>Paired quality</h2>
+    <span class="panel-kicker" id="quality-kicker">by utterance_id, deterministic rubric only</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table console-table">
+      <thead>
+        <tr>
+          <th>Utterance</th>
+          <th>Expected</th>
+          <th>Lane</th>
+          <th>STT text</th>
+          <th>Tool call</th>
+          <th>Source hit</th>
+          <th>Facts</th>
+          <th>Flags</th>
+        </tr>
+      </thead>
+      <tbody id="quality-body">
+        <tr><td colspan="8" class="muted-cell">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="console-panel mb-3">
+  <div class="panel-head">
+    <h2>Latency decision</h2>
+    <span class="panel-kicker" id="latency-kicker">p50 always, p95 gated by sample floor</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table console-table">
+      <thead>
+        <tr><th>Lane</th><th>Stage</th><th>N</th><th>p50</th><th>p95</th><th>Source</th></tr>
+      </thead>
+      <tbody id="latency-body">
+        <tr><td colspan="6" class="muted-cell">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="console-panel mb-3">
+  <div class="panel-head">
+    <h2>Reliability</h2>
+    <span class="panel-kicker">comparable outcomes vs lane-specific diagnostics</span>
+  </div>
+  <div class="reliability-grid">
+    <div>
+      <h3 class="h4">Comparable neutral outcomes (usable in a score)</h3>
+      <div class="table-responsive">
+        <table class="table console-table">
+          <thead><tr><th>Metric</th><th>LiveKit</th><th>Pipecat</th></tr></thead>
+          <tbody id="reliability-comparable-body">
+            <tr><td colspan="3" class="muted-cell">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <h3 class="h4">Lane-specific diagnostics (excluded from any score)</h3>
+      <div class="table-responsive">
+        <table class="table console-table">
+          <thead><tr><th>Event</th><th>Lane</th><th>Count</th></tr></thead>
+          <tbody id="reliability-diagnostics-body">
+            <tr><td colspan="3" class="muted-cell">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="console-panel">
+  <div class="panel-head">
+    <h2>Cost, normalized</h2>
+    <span class="panel-kicker">context, not the decision axis</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table console-table">
+      <thead>
+        <tr>
+          <th>Lane</th>
+          <th>Evidence</th>
+          <th>Total</th>
+          <th>Calls</th>
+          <th>Turns</th>
+          <th>Cost / turn</th>
+          <th>Cost / corpus run</th>
+        </tr>
+      </thead>
+      <tbody id="cost-body">
+        <tr><td colspan="7" class="muted-cell">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+function currentRunId() {
+  const value = document.getElementById("run-id-input").value.trim();
+  return value ? `?run_id=${encodeURIComponent(value)}` : "";
+}
+
+function boolBadge(value) {
+  if (value === null || value === undefined) return '<span class="status-badge status-muted">n/a</span>';
+  return value
+    ? '<span class="status-badge status-up">yes</span>'
+    : '<span class="status-badge status-down">no</span>';
+}
+
+let pollers = [];
+function stopPolling() {
+  pollers.forEach((id) => clearInterval(id));
+  pollers = [];
+}
+
+function startPolling() {
+  stopPolling();
+  const qs = currentRunId();
+
+  pollers.push(pollJson(`/api/comparison/fairness${qs}`, {{ refresh_s * 1000 }}, (data) => {
+    const banner = document.getElementById("comparison-banner");
+    if (data.framework_isolated) {
+      banner.textContent = "Framework-isolated mode: PASS — a lane-selection number would be safe to render.";
+      banner.style.background = "rgba(19, 138, 97, 0.1)";
+      banner.style.borderColor = "rgba(19, 138, 97, 0.38)";
+    } else {
+      banner.textContent = "As-deployed stack comparison — observational. No lane-selection winner renders until every fairness row passes.";
+    }
+    document.getElementById("fairness-kicker").textContent = `${data.lanes_present.length}/2 lanes present`;
+    const body = document.getElementById("fairness-body");
+    body.innerHTML = data.rows.map(row => `
+      <tr>
+        <td>${escapeHtml(row.check)}</td>
+        <td><span class="status-badge status-${escapeHtml(row.status)}">${escapeHtml(row.status)}</span></td>
+        <td>${escapeHtml(row.detail)}</td>
+      </tr>
+    `).join("") || '<tr><td colspan="3" class="muted-cell">No rows.</td></tr>';
+  }));
+
+  pollers.push(pollJson(`/api/comparison/quality${qs}`, {{ refresh_s * 1000 }}, (data) => {
+    const body = document.getElementById("quality-body");
+    const rows = [];
+    data.rows.forEach(row => {
+      ["livekit", "pipecat"].forEach(lane => {
+        const cell = row[lane];
+        if (!cell) {
+          rows.push(`
+            <tr>
+              <td>${escapeHtml(row.utterance_id)}</td>
+              <td>${escapeHtml(row.expected_text || "")}</td>
+              <td>${laneBadge(lane)}</td>
+              <td colspan="5" class="muted-cell">no matching turn</td>
+            </tr>
+          `);
+          return;
+        }
+        const facts = cell.forbidden_facts_absent === false
+          ? '<span class="status-badge status-down">forbidden fact present</span>'
+          : boolBadge(cell.required_facts_present);
+        const flags = [
+          cell.needs_review ? '<span class="status-badge status-warn">needs review</span>' : "",
+          cell.echo_or_extra_turn ? '<span class="status-badge status-muted">echo-filtered</span>' : "",
+        ].filter(Boolean).join(" ") || "-";
+        rows.push(`
+          <tr>
+            <td>${escapeHtml(row.utterance_id)}</td>
+            <td>${escapeHtml(row.expected_text || "")}</td>
+            <td>${laneBadge(lane)}</td>
+            <td>${escapeHtml(cell.stt_text || "")}</td>
+            <td>${boolBadge(cell.tool_call_correct)}</td>
+            <td>${boolBadge(cell.source_hit)}</td>
+            <td>${facts}</td>
+            <td>${flags}</td>
+          </tr>
+        `);
+      });
+    });
+    body.innerHTML = rows.join("") || '<tr><td colspan="8" class="muted-cell">No paired turns yet.</td></tr>';
+  }));
+
+  pollers.push(pollJson(`/api/comparison/latency${qs}`, {{ refresh_s * 1000 }}, (data) => {
+    const body = document.getElementById("latency-body");
+    const rows = [];
+    Object.entries(data.lanes).forEach(([lane, stages]) => {
+      stages.forEach(stage => {
+        rows.push(`
+          <tr>
+            <td>${laneBadge(lane)}</td>
+            <td>${escapeHtml(stage.stage)}</td>
+            <td>${stage.n}</td>
+            <td>${fmtMs(stage.p50_ms)}</td>
+            <td>${stage.p95_ms === null ? `below floor (N&lt;${data.min_n})` : fmtMs(stage.p95_ms)}</td>
+            <td><span class="status-badge status-${stage.source === "measured" ? "up" : "muted"}">${escapeHtml(stage.source)}</span></td>
+          </tr>
+        `);
+      });
+    });
+    body.innerHTML = rows.join("") || '<tr><td colspan="6" class="muted-cell">No turn latency recorded yet.</td></tr>';
+  }));
+
+  pollers.push(pollJson(`/api/comparison/reliability${qs}`, {{ refresh_s * 1000 }}, (data) => {
+    const comparableBody = document.getElementById("reliability-comparable-body");
+    const metrics = new Set();
+    Object.values(data.comparable_outcomes).forEach(counts => Object.keys(counts).forEach(k => metrics.add(k)));
+    comparableBody.innerHTML = Array.from(metrics).map(metric => {
+      const lk = data.comparable_outcomes.livekit?.[metric] ?? "-";
+      const pc = data.comparable_outcomes.pipecat?.[metric] ?? "-";
+      return `<tr><td>${escapeHtml(metric)}</td><td>${lk}</td><td>${pc}</td></tr>`;
+    }).join("") || '<tr><td colspan="3" class="muted-cell">No calls yet.</td></tr>';
+
+    const diagBody = document.getElementById("reliability-diagnostics-body");
+    const diagRows = [];
+    Object.entries(data.lane_specific_diagnostics).forEach(([lane, events]) => {
+      Object.entries(events).forEach(([event, count]) => {
+        diagRows.push(`<tr><td>${escapeHtml(event)}</td><td>${laneBadge(lane)}</td><td>${count}</td></tr>`);
+      });
+    });
+    diagBody.innerHTML = diagRows.join("") || '<tr><td colspan="3" class="muted-cell">No lane-specific events recorded.</td></tr>';
+  }));
+
+  pollers.push(pollJson(`/api/comparison/cost${qs}`, {{ refresh_s * 1000 }}, (data) => {
+    const body = document.getElementById("cost-body");
+    body.innerHTML = data.rows.map(row => `
+      <tr>
+        <td>${laneBadge(row.lane)}</td>
+        <td><span class="status-badge status-${row.evidence === "measured" ? "up" : "muted"}">${escapeHtml(row.evidence)}</span></td>
+        <td>${fmtUsd(row.total_usd)}</td>
+        <td>${row.calls}</td>
+        <td>${row.turns}</td>
+        <td>${fmtUsd(row.cost_per_turn_usd)}</td>
+        <td>${fmtUsd(row.cost_per_corpus_run_usd)}</td>
+      </tr>
+    `).join("") || '<tr><td colspan="7" class="muted-cell">No usage recorded yet.</td></tr>';
+  }));
+}
+
+document.getElementById("run-id-apply").addEventListener("click", startPolling);
+document.getElementById("run-id-input").addEventListener("keydown", (evt) => {
+  if (evt.key === "Enter") startPolling();
+});
+startPolling();
+</script>
+{% endblock %}
