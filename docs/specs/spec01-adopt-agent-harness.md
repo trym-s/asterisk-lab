@@ -3,10 +3,11 @@
 > Governed by `docs/runbooks/spec-rules.md`. A spec is a stable contract, not a
 > changelog. Daily progress belongs in `PLANS.md`.
 
-- **Status:** Active
+- **Status:** Done
 - **Owner:** operator (initial execution by Claude Code during
   `/harness-init`)
 - **Created:** 2026-07-06
+- **Completed:** 2026-07-07
 
 ## Goal
 
