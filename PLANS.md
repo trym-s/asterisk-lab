@@ -6,12 +6,13 @@
 > When the governing spec is complete, archive this file under `docs/archive/plan/`.
 > The next spec starts with a fresh root `PLANS.md` from `docs/templates/PLANS.md`.
 
-**Status:** Live paired run against real VM extensions is done and proved
-the corpus/suite/dashboard rework correct (Pipecat: clean 4/4-turn
-conversations both times), but it also surfaced a real LiveKit-lane bug
-(participant disconnects after turn 1, both conversations) that blocks
-spec04's live-evidence closure. Not a spec05 defect - the corpus, WAV
-generation, suite driver, and dashboard scoring all behaved correctly.
+**Status:** Live paired run proved the corpus/suite/dashboard rework
+correct, then surfaced and fixed a real bug in `run-suite.sh` itself
+(baresip's silent RTP gap between turns was tripping LiveKit SIP's
+media-inactivity watchdog). Re-verified live after the fix: LiveKit went
+from disconnecting after turn 1 on every call to completing one
+conversation fully (4/4) and the other to 3/4. spec04's live-evidence
+criterion still cannot close - see Blockers for the residual gap.
 **Governing spec:** `docs/specs/spec05-realistic-multiturn-test-corpus.md`
 **Predecessor:** `docs/specs/spec04-livekit-pipecat-fair-comparison.md`
 (Draft; implementation done, but its live-evidence acceptance criterion
@@ -44,12 +45,16 @@ cannot close yet - see Blockers)
       choice on 2026-07-08 - delete manually or let `gen-utterances.sh`
       overwrite them on next run.
 - [x] Re-run the paired LiveKit/Pipecat suite against the new corpus
-      (shared `VOICEBOT_RUN_ID=livekit-pipecat-multiturn-20260708`) and
-      capture dashboard evidence (`runtime/spec05-live-evidence/*.json`,
-      git-ignored). Confirmed correct: Pipecat completed both 4-turn
-      conversations cleanly with correct answers per `expected-answers.json`
-      (`comparable_outcomes.pipecat` is 2/2 on every check). Does NOT close
-      spec04's criterion - see Blockers.
+      (shared `VOICEBOT_RUN_ID`) and capture dashboard evidence
+      (`runtime/spec05-live-evidence/*.json`, git-ignored). First pass
+      (`run_id=...-20260708`): Pipecat completed both 4-turn conversations
+      cleanly (2/2 on every `comparable_outcomes` check); LiveKit
+      disconnected after turn 1 on both calls - root-caused (see Blockers
+      history) and fixed in `run-suite.sh` (commit `134cc2f`). Second pass
+      after the fix (`run_id=...-20260708-v2`, now the only data kept on
+      the VM): LiveKit reached 4/4 turns on one conversation, 3/4 on the
+      other - no more media-timeout disconnects, but still does NOT close
+      spec04's criterion - see Blockers for the residual gap.
 
 ## Prerequisite fixes (confirmed already committed in `f50485b`)
 
@@ -64,19 +69,35 @@ cannot close yet - see Blockers)
 
 ## Blockers
 
-- **LiveKit lane disconnects after turn 1** (blocks spec04 closure, not a
-  spec05 defect): both live calls to ext 1099 ended with
-  `participant_disconnected` right after the agent answered the first
-  turn, well before the script played turns 2-4. Trace events confirm only
-  `turn-0001` was ever transcribed; the SIP participant left the LiveKit
-  room on its own. `livekit/agent/agent.py` reacts to `participant_disconnected`
-  / `room disconnected` events (lines ~276-282) but does not cause them -
-  the disconnect itself is upstream (Asterisk<->LiveKit SIP trunk or
-  LiveKit SIP gateway). Needs its own investigation/spec; out of scope for
-  spec05 (Non-Goals explicitly excludes agent conversational-logic changes).
-  Pipecat, driven by the identical corpus and suite, completed both
-  4-turn conversations without issue - proving the corpus/suite rework
-  itself is not the cause.
+- **RESOLVED - root cause was `run-suite.sh`, not the LiveKit agent:**
+  the first live pass had both LiveKit calls end with
+  `participant_disconnected` right after turn 1. `lk-sip`'s own container
+  logs pinned it precisely: `media_port.go: "triggering media timeout"`,
+  `sinceLast: 15.000869487s`, `"SIP call ended", "reason": "media-timeout"`.
+  baresip's `aufile` ausrc stops emitting RTP entirely at EOF instead of
+  looping, so the caller leg went fully silent for the whole `SETTLE`
+  window between turns; LiveKit's SIP gateway (`lk-sip` v1.6.0) has a
+  hardcoded ~15s RTP-inactivity watchdog that kills a call it thinks is
+  dead - unrelated to conversation content. Pipecat's transport
+  (AudioSocket, a local Asterisk<->container TCP stream) has no such
+  SIP-layer watchdog, which is why it sailed through the identical corpus
+  and suite while LiveKit died every time. Fixed in `run-suite.sh`
+  (commit `134cc2f`): re-arm the silence primer every second through the
+  settle window so RTP never actually goes dead.
+- **Residual, milder gap (open):** after the fix, one LiveKit conversation
+  completed all 4 turns cleanly; the other reached only 3/4 - not a
+  media-timeout this time (`lk-sip` log shows `"reason": "hangup"`, i.e.
+  our own script's deliberate end-of-conversation hangup fired before turn
+  4 was captured). Cause: `run-suite.sh`'s per-turn wait is a fixed
+  `dur + SETTLE` timer, not an "agent finished speaking" signal; turn-level
+  trace timestamps for that call show the agent's own STT-to-TTS round
+  trip and speech length repeatedly running close to or past the 15s
+  settle budget (compounded by an STT mishearing on turn 2 - the towel
+  question's opening word came through garbled, sending the tool lookup
+  down the wrong path), so cumulative drift across 4 turns
+  ate into the last turn's window. This is a suite-timing tuning question
+  (bump `SETTLE`, or make the wait adaptive) rather than a fresh bug;
+  deferred to the operator rather than fixed unilaterally this session.
 - Spec05's Architecture Contract states `conversations.tsv` and its
   generated `audio/*.wav` are "versioned, read-only fixtures tracked in
   git, exactly as `utterances.tsv` and its WAVs were" - but the repo's
@@ -92,16 +113,21 @@ cannot close yet - see Blockers)
   `runtime/spec04-comparison-verify/` (git-ignored) - still valid for the
   panel-rendering behavior it covers.
 - spec05's live evidence (git-ignored): `runtime/spec05-live-evidence/*.json`
-  - `/api/comparison/{fairness,quality,latency,reliability,cost}` responses
-    for `run_id=livekit-pipecat-multiturn-20260708`, captured 2026-07-08
-    against real VM extensions 1099 (LiveKit) and 1098 (Pipecat), after the
-    VM-side log cleanup below. Proves the corpus/generator/suite/
-    reliability-scoring rework correct (Paired Quality panel matches both
-    lanes' turn-1 answers against `expected-answers.json` with
-    `match_score: 1.0`); also proves the LiveKit-lane disconnect bug above
-    (real, not a scoring
-    artifact - trace events show the SIP participant left the room after
-    turn 1's response, both conversations).
+  - Current content is the post-fix pass (`run_id=...-20260708-v2`,
+    default/no-`run_id` view since that's now the only data on the VM):
+    `comparable_outcomes.pipecat` 2/2 on every check;
+    `comparable_outcomes.livekit` 2/2 on `call_completed`,
+    `no_missing_stage`, `no_error_event`, `no_stale_call`,
+    `no_empty_final_transcript`, `no_duplicate_extra_turn`, but 1/2 on
+    `expected_turns_reached` (see Blockers' residual-gap entry). Paired
+    Quality panel matches both lanes' captured turns against
+    `expected-answers.json` with `match_score: 1.0` where transcribed
+    correctly.
+  - The pre-fix pass (`run_id=...-20260708`, LiveKit 0/2 on every
+    `expected_turns_reached`/`no_missing_stage`/`no_empty_final_transcript`
+    check, both calls killed by `lk-sip`'s media-timeout) is preserved only
+    in the VM-side backup and this file's history, not in the JSON
+    evidence directory (overwritten by the second capture).
 
 ## VM-side data hygiene
 
@@ -116,9 +142,29 @@ cannot close yet - see Blockers)
   `/api/comparison/*` endpoint reads `settings.turns_path`, so it cannot
   pollute the comparison panels. Verified both the scoped and default
   views post-prune return identical, clean results.
+- 2026-07-08 - After the `run-suite.sh` fix and re-run under a new
+  `run_id=...-20260708-v2`, pruned again (operator-confirmed) down to only
+  v2's 4 calls, backing up the prior (both-runs) state to
+  `/var/lib/voicebot/backup-20260708-v1-run/` on the VM first. Superseded
+  the broken pre-fix run rather than keeping both, since it was fully
+  reproduced by the fixed suite.
 
 ## Recent updates
 
+- 2026-07-08 - Root-caused the LiveKit disconnect from the entry above:
+  read `lk-sip`'s own container logs for the exact call window and found
+  `media_port.go: "triggering media timeout"` / `"reason": "media-timeout"`
+  - LiveKit's SIP gateway has a hardcoded ~15s RTP-inactivity watchdog, and
+    baresip's `aufile` ausrc goes fully silent (no RTP at all) once a WAV
+    finishes rather than looping, so any `SETTLE >= 15s` gap between turns
+    reliably killed the call. This reframed it from "a LiveKit agent bug,
+    out of scope for spec05" to "a `run-suite.sh` gap, squarely spec05's
+    territory". Fixed (commit `134cc2f`): re-arm the silence primer every
+    second through the settle window. Re-ran live: LiveKit went from
+    dying after turn 1 on 2/2 calls to completing 4/4 turns on one
+    conversation and 3/4 on the other (a milder, separate timing issue -
+    see Blockers). Pruned the VM's logs again to the fixed run only
+    (operator-confirmed, backed up first - see VM-side data hygiene).
 - 2026-07-08 - Ran the live paired suite against real VM extensions
   (deploying the spec05 rework first: `make deploy`, `deploy-voicebot-livekit`,
   `deploy-voicebot-pipecat`, `deploy-voicebot-dashboard`; generated all 8
