@@ -6,13 +6,16 @@
 > When the governing spec is complete, archive this file under `docs/archive/plan/`.
 > The next spec starts with a fresh root `PLANS.md` from `docs/templates/PLANS.md`.
 
-**Status:** In progress - corpus/generator/suite rework implemented and
-committed; old per-utterance WAVs intentionally left in place (operator
-deferred cleanup); live re-run against real VMs not started
+**Status:** Live paired run against real VM extensions is done and proved
+the corpus/suite/dashboard rework correct (Pipecat: clean 4/4-turn
+conversations both times), but it also surfaced a real LiveKit-lane bug
+(participant disconnects after turn 1, both conversations) that blocks
+spec04's live-evidence closure. Not a spec05 defect - the corpus, WAV
+generation, suite driver, and dashboard scoring all behaved correctly.
 **Governing spec:** `docs/specs/spec05-realistic-multiturn-test-corpus.md`
 **Predecessor:** `docs/specs/spec04-livekit-pipecat-fair-comparison.md`
-(Draft; implementation done, but its live-evidence acceptance criterion is
-now closed by spec05, not independently - see spec05 References)
+(Draft; implementation done, but its live-evidence acceptance criterion
+cannot close yet - see Blockers)
 **Last updated:** 2026-07-08
 
 ## Active milestones
@@ -40,9 +43,13 @@ now closed by spec05, not independently - see spec05 References)
       runtime artifacts and were deliberately left in place per operator
       choice on 2026-07-08 - delete manually or let `gen-utterances.sh`
       overwrite them on next run.
-- [ ] Re-run the paired LiveKit/Pipecat suite against the new corpus
-      (shared `VOICEBOT_RUN_ID`) and recapture dashboard evidence, closing
-      spec04's live-evidence acceptance criterion.
+- [x] Re-run the paired LiveKit/Pipecat suite against the new corpus
+      (shared `VOICEBOT_RUN_ID=livekit-pipecat-multiturn-20260708`) and
+      capture dashboard evidence (`runtime/spec05-live-evidence/*.json`,
+      git-ignored). Confirmed correct: Pipecat completed both 4-turn
+      conversations cleanly with correct answers per `expected-answers.json`
+      (`comparable_outcomes.pipecat` is 2/2 on every check). Does NOT close
+      spec04's criterion - see Blockers.
 
 ## Prerequisite fixes (confirmed already committed in `f50485b`)
 
@@ -57,20 +64,62 @@ now closed by spec05, not independently - see spec05 References)
 
 ## Blockers
 
-- None yet for spec05 itself. Live evidence (Acceptance Criteria) needs
-  actual Asterisk VM access (LiveKit ext 1099, Pipecat ext 1098) once the
-  corpus/generator/suite rework lands.
+- **LiveKit lane disconnects after turn 1** (blocks spec04 closure, not a
+  spec05 defect): both live calls to ext 1099 ended with
+  `participant_disconnected` right after the agent answered the first
+  turn, well before the script played turns 2-4. Trace events confirm only
+  `turn-0001` was ever transcribed; the SIP participant left the LiveKit
+  room on its own. `livekit/agent/agent.py` reacts to `participant_disconnected`
+  / `room disconnected` events (lines ~276-282) but does not cause them -
+  the disconnect itself is upstream (Asterisk<->LiveKit SIP trunk or
+  LiveKit SIP gateway). Needs its own investigation/spec; out of scope for
+  spec05 (Non-Goals explicitly excludes agent conversational-logic changes).
+  Pipecat, driven by the identical corpus and suite, completed both
+  4-turn conversations without issue - proving the corpus/suite rework
+  itself is not the cause.
+- Spec05's Architecture Contract states `conversations.tsv` and its
+  generated `audio/*.wav` are "versioned, read-only fixtures tracked in
+  git, exactly as `utterances.tsv` and its WAVs were" - but the repo's
+  `.gitignore` has a blanket `*.wav` rule, and the old WAVs were in fact
+  never tracked in git history either. This is a spec/reality mismatch
+  the operator should resolve (either amend the spec's Architecture
+  Contract, or add a `.gitignore` exception for `test-caller/audio/`) -
+  not something resolved unilaterally here.
 
 ## Canonical evidence
 
 - spec04's replayed-fixture evidence remains at
   `runtime/spec04-comparison-verify/` (git-ignored) - still valid for the
-  panel-rendering behavior it covers, but does not satisfy spec04's or
-  spec05's live-evidence criteria (real VM run, multi-turn corpus,
-  silencedetect-verified audio). No spec05 evidence captured yet.
+  panel-rendering behavior it covers.
+- spec05's live evidence (git-ignored): `runtime/spec05-live-evidence/*.json`
+  - `/api/comparison/{fairness,latency,reliability,cost}` responses for
+    `run_id=livekit-pipecat-multiturn-20260708`, captured 2026-07-08
+    against real VM extensions 1099 (LiveKit) and 1098 (Pipecat). Proves
+    the corpus/generator/suite/reliability-scoring rework correct; also
+    proves the LiveKit-lane disconnect bug above (real, not a scoring
+    artifact - trace events show the SIP participant left the room after
+    turn 1's response, both conversations).
 
 ## Recent updates
 
+- 2026-07-08 - Ran the live paired suite against real VM extensions
+  (deploying the spec05 rework first: `make deploy`, `deploy-voicebot-livekit`,
+  `deploy-voicebot-pipecat`, `deploy-voicebot-dashboard`; generated all 8
+  turn WAVs via ElevenLabs with no truncation-guard retries needed;
+  registered a host baresip as 1001/1002 through the SBC). LiveKit (1099)
+  and Pipecat (1098) each dialed both conversations once with a shared
+  `VOICEBOT_RUN_ID`. Result: Pipecat completed both 4-turn conversations
+  correctly (verified against `expected-answers.json`); LiveKit
+  disconnected after turn 1 both times (see Blockers) - a real lane bug,
+  not a corpus/suite defect. While reviewing the reliability evidence,
+  found and fixed (commit `501a2e7`) a related dashboard bug: both agents
+  tag the greeting with `turn_id="greeting"`, which `list_calls` and
+  `reliability_summary` were counting as a real turn - this inflated
+  turn_count by one on every call, so it initially misreported Pipecat's
+  clean 4-turn run as having a duplicate/extra turn and every call
+  (both lanes) as missing stt/llm stages. Fixed by excluding the sentinel
+  turn_id in both places, with unit tests; 25/25 dashboard tests pass.
+  Evidence and the resulting blocker are recorded above.
 - 2026-07-08 - Implemented and committed (`d1a8560`) the spec05
   corpus/generator/suite rework: `conversations.tsv`, the truncation-guarded
   `gen-utterances.sh`, the per-conversation `run-suite.sh`, the regrouped
