@@ -92,13 +92,30 @@ cannot close yet - see Blockers)
   `runtime/spec04-comparison-verify/` (git-ignored) - still valid for the
   panel-rendering behavior it covers.
 - spec05's live evidence (git-ignored): `runtime/spec05-live-evidence/*.json`
-  - `/api/comparison/{fairness,latency,reliability,cost}` responses for
-    `run_id=livekit-pipecat-multiturn-20260708`, captured 2026-07-08
-    against real VM extensions 1099 (LiveKit) and 1098 (Pipecat). Proves
-    the corpus/generator/suite/reliability-scoring rework correct; also
-    proves the LiveKit-lane disconnect bug above (real, not a scoring
+  - `/api/comparison/{fairness,quality,latency,reliability,cost}` responses
+    for `run_id=livekit-pipecat-multiturn-20260708`, captured 2026-07-08
+    against real VM extensions 1099 (LiveKit) and 1098 (Pipecat), after the
+    VM-side log cleanup below. Proves the corpus/generator/suite/
+    reliability-scoring rework correct (Paired Quality panel matches both
+    lanes' turn-1 answers against `expected-answers.json` with
+    `match_score: 1.0`); also proves the LiveKit-lane disconnect bug above
+    (real, not a scoring
     artifact - trace events show the SIP participant left the room after
     turn 1's response, both conversations).
+
+## VM-side data hygiene
+
+- 2026-07-08 - Pruned `/var/lib/voicebot/{events,usage}.jsonl` on the
+  Asterisk VM down to only `run_id=livekit-pipecat-multiturn-20260708`
+  (108/2018 event rows, 56/1447 usage rows kept), at operator request, so
+  the dashboard's default no-`run_id` comparison view is no longer mixed
+  with ~95 old calls (manual talk-tests, the old single-utterance corpus,
+  and the earlier `spec04-live-20260708-102331` run). Originals backed up
+  to `/var/lib/voicebot/backup-20260708/` on the VM before pruning.
+  `turns.jsonl` was left untouched - grepped `main.py` and confirmed no
+  `/api/comparison/*` endpoint reads `settings.turns_path`, so it cannot
+  pollute the comparison panels. Verified both the scoped and default
+  views post-prune return identical, clean results.
 
 ## Recent updates
 
