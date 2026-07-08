@@ -555,9 +555,19 @@ COMPARISON_ECHO_EVENTS = {"echo_filtered", "barge_in.stop_bot_audio"}
 
 
 def _filter_run(events: list[dict[str, Any]], run_id: str | None) -> list[dict[str, Any]]:
+    """Scope events to a comparison run.
+
+    `run_id` is only stamped on `call.started`/`profile.loaded` (additive
+    field, per this spec's Architecture Contract) -- not on every STT/LLM/
+    TTS/tool/turn event a call emits. Scoping must therefore go through
+    call_id membership: find which call_ids belong to the run, then keep
+    every event for those call_ids, not just the rows that carry run_id
+    themselves.
+    """
     if run_id is None:
         return events
-    return [row for row in events if row.get("run_id") == run_id]
+    call_ids = {row["call_id"] for row in events if row.get("run_id") == run_id}
+    return [row for row in events if row["call_id"] in call_ids]
 
 
 def _dig(payload: dict[str, Any], path: list[str]) -> Any:
