@@ -6,8 +6,9 @@
 > When the governing spec is complete, archive this file under `docs/archive/plan/`.
 > The next spec starts with a fresh root `PLANS.md` from `docs/templates/PLANS.md`.
 
-**Status:** In progress - corpus/generator/suite rework not started; two
-prerequisite bug fixes from live-evidence gathering are staged uncommitted
+**Status:** In progress - corpus/generator/suite rework implemented and
+committed; old per-utterance WAVs intentionally left in place (operator
+deferred cleanup); live re-run against real VMs not started
 **Governing spec:** `docs/specs/spec05-realistic-multiturn-test-corpus.md`
 **Predecessor:** `docs/specs/spec04-livekit-pipecat-fair-comparison.md`
 (Draft; implementation done, but its live-evidence acceptance criterion is
@@ -16,39 +17,43 @@ now closed by spec05, not independently - see spec05 References)
 
 ## Active milestones
 
-- [ ] Replace `utterances.tsv` with `conversations.tsv`
+- [x] Replace `utterances.tsv` with `conversations.tsv`
       (`vms/asterisk/services/test-caller/`): two 4-turn Turkish
       conversations (`magaza-sorular`, `kargo-iade-sorular`), facts grounded
       in `vms/asterisk/services/common/docs/magaza/*.md`.
-- [ ] Update `gen-utterances.sh`: read `conversations.tsv`, switch
+- [x] Update `gen-utterances.sh`: read `conversations.tsv`, switch
       `ELEVENLABS_MODEL_ID` default to `eleven_multilingual_v2`, add an
       `ffmpeg silencedetect` truncation guard with one automatic
       regenerate-once retry and a hard fail on persistent truncation.
-- [ ] Restructure `run-suite.sh`: dial once per `conversation_id`, play all
+- [x] Restructure `run-suite.sh`: dial once per `conversation_id`, play all
       turns in sequence without hanging up between them, hang up only after
       the last turn's settle window.
-- [ ] Update `expected-answers.json` for the new corpus content and per-turn
+- [x] Update `expected-answers.json` for the new corpus content and per-turn
       `utterance_id`s (schema/scoring mechanism unchanged).
-- [ ] Fix `reliability_summary()`'s `expected_turns_per_call` handling
+- [x] Fix `reliability_summary()`'s `expected_turns_per_call` handling
       (`vms/asterisk/services/dashboard/app/data.py`) so 4-turn calls are
       correctly counted, with a unit test proving it.
 - [ ] Remove old `utterances.tsv` and its per-utterance WAVs
       (`01-greeting.wav` .. `07-thanks-hangup.wav`); keep `00-silence.wav`.
+      `utterances.tsv` itself is removed (committed in `d1a8560`); the WAVs
+      under `vms/asterisk/services/test-caller/audio/` are gitignored
+      runtime artifacts and were deliberately left in place per operator
+      choice on 2026-07-08 - delete manually or let `gen-utterances.sh`
+      overwrite them on next run.
 - [ ] Re-run the paired LiveKit/Pipecat suite against the new corpus
       (shared `VOICEBOT_RUN_ID`) and recapture dashboard evidence, closing
       spec04's live-evidence acceptance criterion.
 
-## Prerequisite fixes (staged uncommitted, found during spec04 live-evidence attempt)
+## Prerequisite fixes (confirmed already committed in `f50485b`)
 
-- [ ] Commit `_filter_run()` fix in
-      `vms/asterisk/services/dashboard/app/data.py`: `run_id` is only
-      stamped on `call.started`/`profile.loaded`, not on every event a call
-      emits, so scoping must go through `call_id` membership rather than
-      filtering rows directly on `row.get("run_id")`.
-- [ ] Commit `VOICEBOT_RUN_ID` passthrough added to both
+- [x] `_filter_run()` fix in `vms/asterisk/services/dashboard/app/data.py`:
+      `run_id` is only stamped on `call.started`/`profile.loaded`, not on
+      every event a call emits, so scoping goes through `call_id`
+      membership rather than filtering rows directly on `row.get("run_id")`.
+- [x] `VOICEBOT_RUN_ID` passthrough in both
       `vms/asterisk/services/livekit/docker-compose.yml` and
       `vms/asterisk/services/pipecat/docker-compose.yml` (was set by
-      `run-suite.sh` but never reached the containers).
+      `run-suite.sh` but previously never reached the containers).
 
 ## Blockers
 
@@ -66,6 +71,16 @@ now closed by spec05, not independently - see spec05 References)
 
 ## Recent updates
 
+- 2026-07-08 - Implemented and committed (`d1a8560`) the spec05
+  corpus/generator/suite rework: `conversations.tsv`, the truncation-guarded
+  `gen-utterances.sh`, the per-conversation `run-suite.sh`, the regrouped
+  `expected-answers.json`, and `reliability_summary()`'s
+  `expected_turns_for_corpus()` fix with unit tests (24/24 dashboard tests
+  pass, ruff and shellcheck clean). Confirmed the two "prerequisite fixes"
+  were already committed in `f50485b` (PLANS.md had gone stale on that
+  point). Left the old per-utterance WAVs under `test-caller/audio/` in
+  place at operator request (deferred cleanup, not a blocker). Still open:
+  the live re-run against real VM extensions.
 - 2026-07-08 - Created spec05 (realistic multi-turn test corpus) after the
   operator, while gathering spec04's first real (non-replayed) live VM
   evidence, found (a) generated WAV audio truncating mid-sentence and (b)
