@@ -27,6 +27,10 @@ PIPELINE_STEPS = [
     ("tts", "TTS input", "request"),
 ]
 ACTIVE_CALL_STALE_S = 120
+# Both agents tag the bot's opening line with this sentinel turn_id (it is
+# synthesized before any caller audio arrives, not a scored conversational
+# turn) - exclude it from turn_count so it cannot be mistaken for a real turn.
+GREETING_TURN_ID = "greeting"
 RECORDING_RE = re.compile(
     r"^(?P<stamp>\d{8}-\d{6})-(?P<caller>[^-]+)-(?P<target>[^-]+)-(?P<uniqueid>.+)$"
 )
@@ -323,7 +327,7 @@ def list_calls(
         entry["event_names"].add(row["event"])
         entry["start_ts"] = min(entry["start_ts"], row["ts"])
         entry["end_ts"] = max(entry["end_ts"], row["ts"])
-        if row.get("turn_id"):
+        if row.get("turn_id") and row["turn_id"] != GREETING_TURN_ID:
             entry["turn_ids"].add(row["turn_id"])
 
     result = []
@@ -951,7 +955,9 @@ def reliability_summary(
         events_by_call.setdefault((row["lane"], row["call_id"]), []).append(row)
 
     turns_by_call: dict[tuple[str, str], list[list[dict[str, Any]]]] = {}
-    for (lane, call_id, _turn_id), turn_events in group_turns(scoped).items():
+    for (lane, call_id, turn_id), turn_events in group_turns(scoped).items():
+        if turn_id == GREETING_TURN_ID:
+            continue
         turns_by_call.setdefault((lane, call_id), []).append(turn_events)
 
     comparable = {

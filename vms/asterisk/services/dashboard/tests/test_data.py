@@ -78,6 +78,20 @@ class ListCallsTest(unittest.TestCase):
         self.assertEqual(by_id["c1"]["turn_count"], 2)
         self.assertEqual(by_id["c2"]["turn_count"], 1)
 
+    def test_greeting_sentinel_turn_id_is_excluded_from_turn_count(self) -> None:
+        """Both agents tag the bot's opening line with turn_id='greeting'; it must
+        not inflate turn_count and read as an extra conversational turn."""
+        events = [
+            trace_events.build_event(
+                lane="livekit", call_id="c1", turn_id="greeting", stage="tts", event="request", ts=1.0,
+            ),
+            trace_events.build_event(
+                lane="livekit", call_id="c1", turn_id="turn-0001", stage="stt", event="e", ts=2.0,
+            ),
+        ]
+        calls = data.list_calls(events)
+        self.assertEqual(calls[0]["turn_count"], 1)
+
     def test_marks_recent_started_call_in_progress_and_stales_legacy_rows(self) -> None:
         events = [
             trace_events.build_event(
@@ -380,13 +394,22 @@ class ReliabilitySummaryTest(unittest.TestCase):
         self.assertEqual(result["lane_specific_diagnostics"]["livekit"], {})
 
     def test_four_turn_conversation_call_reaches_expected_turns(self) -> None:
-        """A 4-turn conversation call must not be misreported as under- or over-turned."""
+        """A 4-turn conversation call must not be misreported as under- or over-turned.
+
+        Also covers the greeting sentinel turn_id (both agents tag the bot's
+        opening line with turn_id='greeting'): it must not be scored as a
+        conversational turn missing stt/llm, or inflate turn_count.
+        """
         events = [
             trace_events.build_event(
                 lane="livekit", call_id="c1", stage="call", event="call.started", ts=1.0,
             ),
             trace_events.build_event(
                 lane="livekit", call_id="c1", stage="call", event="call.ended", ts=20.0,
+            ),
+            trace_events.build_event(
+                lane="livekit", call_id="c1", turn_id="greeting", stage="tts",
+                event="request", ts=1.1, payload={},
             ),
         ]
         for i in range(1, 5):
@@ -412,6 +435,8 @@ class ReliabilitySummaryTest(unittest.TestCase):
         counts = result["comparable_outcomes"]["livekit"]
         self.assertEqual(counts["expected_turns_reached"], 1)
         self.assertEqual(counts["no_duplicate_extra_turn"], 1, "a real 4-turn call must not read as an extra turn")
+        self.assertEqual(counts["no_missing_stage"], 1, "the greeting sentinel turn must not count as a turn missing stt/llm")
+        self.assertEqual(counts["no_empty_final_transcript"], 1, "the greeting sentinel turn must not count as an empty transcript")
 
     def test_expected_turns_for_corpus_derives_max_conversation_length(self) -> None:
         corpus = {
