@@ -205,6 +205,14 @@ body {
   font-weight: 800;
 }
 
+.panel-help {
+  margin: -0.35rem 0 0.85rem;
+  color: var(--console-muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  max-width: 62rem;
+}
+
 .panel-kicker,
 .panel-link {
   color: var(--console-muted);

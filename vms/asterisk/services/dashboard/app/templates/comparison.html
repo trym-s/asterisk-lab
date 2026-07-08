@@ -20,6 +20,13 @@
     <h2>Fairness gate</h2>
     <span class="panel-kicker" id="fairness-kicker">polling</span>
   </div>
+  <p class="panel-help">
+    Before comparing anything else, this checks whether the comparison
+    itself is fair: same model, same system prompt, same tool schema on
+    both lanes. If any row below fails, the two lanes aren't being tested
+    under the same conditions, so no "X is better" number should be
+    trusted until every row here passes.
+  </p>
   <div class="table-responsive">
     <table class="table console-table">
       <thead>
@@ -37,6 +44,16 @@
     <h2>Paired quality</h2>
     <span class="panel-kicker" id="quality-kicker">by utterance_id, deterministic rubric only</span>
   </div>
+  <p class="panel-help">
+    For every scripted question in the test corpus, this shows what each
+    lane's bot actually heard and said, side by side. "Tool call" and
+    "Source hit" tell you whether the bot looked the answer up in the
+    knowledge base instead of guessing. "Facts" tells you whether the
+    required facts (e.g. the correct price) were present, and flags a
+    lane if it stated something it explicitly should not have. "Flags"
+    marks turns that need a human look (unclear match) or were filtered
+    out as an echo/duplicate rather than a real answer.
+  </p>
   <div class="table-responsive">
     <table class="table console-table">
       <thead>
@@ -63,6 +80,16 @@
     <h2>Latency decision</h2>
     <span class="panel-kicker" id="latency-kicker">p50 always, p95 gated by sample floor</span>
   </div>
+  <p class="panel-help">
+    How fast each pipeline stage responds, per lane: STT (speech-to-text),
+    LLM (the model composing an answer), Tool (a knowledge-base lookup),
+    TTS (text-to-speech). p50 is the typical case; p95 (the slow-case tail)
+    only renders once there are enough samples (N) to trust it, otherwise
+    it shows "below floor" rather than a misleading number from too few
+    calls. "Source: measured" means a real instrumented duration from the
+    lane itself; "approx" means it was estimated from event timestamps and
+    can be noisy - weight measured numbers more heavily when comparing.
+  </p>
   <div class="table-responsive">
     <table class="table console-table">
       <thead>
@@ -80,6 +107,18 @@
     <h2>Reliability</h2>
     <span class="panel-kicker">comparable outcomes vs lane-specific diagnostics</span>
   </div>
+  <p class="panel-help">
+    Did the calls actually work? The left table counts, out of every call
+    in this run, how many: completed without staying stuck, reached all
+    the expected conversation turns (didn't get cut off early or die
+    mid-call), had no error events, had a real (non-empty) transcript on
+    every turn, and didn't double-count a turn. These checks apply
+    identically to both lanes, so this table is the one safe to use when
+    deciding which lane is more reliable. The right table is diagnostics
+    that only make sense for one lane's own architecture (e.g. echo
+    filtering) - informative, but deliberately left out of any head-to-head
+    score since the other lane can't produce a comparable number for it.
+  </p>
   <div class="reliability-grid">
     <div>
       <h3 class="h4">Comparable neutral outcomes (usable in a score)</h3>
@@ -111,6 +150,16 @@
     <h2>Cost, normalized</h2>
     <span class="panel-kicker">context, not the decision axis</span>
   </div>
+  <p class="panel-help">
+    What each lane costs, normalized per turn and per full corpus run so
+    lanes with different call/turn counts stay comparable. "Evidence:
+    measured" means real billed usage; "estimated" (or "mixed") means at
+    least part of the number came from a price table because the lane
+    doesn't expose that usage directly - treat estimated numbers as a
+    ballpark, not exact. This panel is context for the decision, not the
+    decision itself: a cheaper lane that fails Reliability or Paired
+    Quality is not a good trade.
+  </p>
   <div class="table-responsive">
     <table class="table console-table">
       <thead>
