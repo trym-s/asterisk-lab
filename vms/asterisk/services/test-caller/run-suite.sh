@@ -127,14 +127,23 @@ for conv_id in "${conv_ids[@]}"; do
     # to 5s if ffprobe missing.
     dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$wav" 2>/dev/null || echo 5)
     dur_int=${dur%.*}
-    wait_total=$(( dur_int + SETTLE ))
 
-    printf "  [%d/%d] %-25s dur=%.1fs  wait=%ds\n" "$turn_n" "${#turn_ids[@]}" "$utterance_id" "$dur" "$wait_total"
+    printf "  [%d/%d] %-25s dur=%.1fs  settle=%ds\n" "$turn_n" "${#turn_ids[@]}" "$utterance_id" "$dur" "$SETTLE"
 
     send_cmd ausrc "aufile,$wav"
-    # Let the WAV play through + SETTLE for the agent reply before either
-    # the next turn's WAV or (on the last turn) the hangup below.
-    sleep "$wait_total"
+    sleep "$dur_int"
+
+    # baresip's aufile ausrc stops emitting RTP at EOF rather than looping,
+    # so leaving it dangling here goes fully silent (zero packets) for the
+    # whole SETTLE window. LiveKit's SIP gateway enforces a ~15s RTP
+    # media-inactivity watchdog and kills the call as dead if it sees that -
+    # unrelated to conversation content, but exactly what a SETTLE >= 15s
+    # gap triggers. Re-arm the (2s) silence primer every second so the RTP
+    # stream never actually goes dead while the agent replies.
+    for ((settle_s = 0; settle_s < SETTLE; settle_s++)); do
+      send_cmd ausrc "aufile,$SILENCE"
+      sleep 1
+    done
   done
 
   send_cmd hangup ""
