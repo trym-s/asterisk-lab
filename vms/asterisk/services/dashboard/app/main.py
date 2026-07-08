@@ -270,9 +270,11 @@ def api_comparison_latency(run_id: str | None = None):
 @app.get("/api/comparison/reliability", dependencies=[Depends(require_auth)])
 def api_comparison_reliability(run_id: str | None = None):
     events = data.load_events(settings.events_path)
+    expected_corpus = data.load_expected_corpus(settings.expected_corpus_path)
     return data.reliability_summary(
         events,
         run_id,
+        expected_turns_per_call=data.expected_turns_for_corpus(expected_corpus),
         active_stale_s=settings.active_call_stale_s,
     )
 

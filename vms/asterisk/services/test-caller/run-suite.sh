@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Play every audio/*.wav into a target extension sequentially, log per-call
-# metrics, and print a summary. Drives the currently running baresip via its
-# ctrl_tcp module (127.0.0.1:4444 by default) — the operator's baresip must
-# already be registered as 1001 (or whichever caller ext) before invoking.
+# Dial once per conversation_id in conversations.tsv, play every turn's WAV
+# in sequence without hanging up between turns, log per-call metrics, and
+# print a summary. Drives the currently running baresip via its ctrl_tcp
+# module (127.0.0.1:4444 by default) — the operator's baresip must already
+# be registered as 1001 (or whichever caller ext) before invoking.
 #
 # One-time baresip setup: add `module ctrl_tcp.so` to ~/.baresip/config, then
 # restart baresip. Verify with `ss -ltnp | grep 4444`.
@@ -71,11 +72,23 @@ SILENCE="$HERE/audio/00-silence.wav"
 }
 
 shopt -s nullglob
-# Skip the silence primer when iterating utterances.
-mapfile -t wavs < <(find "$HERE/audio" -maxdepth 1 -type f -name '*.wav' ! -name '00-silence.wav' | sort)
-[ ${#wavs[@]} -gt 0 ] || { echo "no WAVs under $HERE/audio/"; exit 1; }
+# One row per turn: conversation_id, turn_index, utterance_id, text.
+mapfile -t rows < <(tail -n +2 "$HERE/conversations.tsv")
+[ ${#rows[@]} -gt 0 ] || { echo "no rows in $HERE/conversations.tsv"; exit 1; }
 
-echo "==> target ext: $TARGET  |  utterances: ${#wavs[@]}  |  log dir: $LOG_DIR"
+# Group rows into ordered turn lists per conversation_id, preserving file order.
+conv_ids=()
+declare -A conv_turns=()
+for row in "${rows[@]}"; do
+  IFS=$'\t' read -r conv_id _turn_index utterance_id _text <<<"$row"
+  [ -z "$conv_id" ] && continue
+  if [ -z "${conv_turns[$conv_id]:-}" ]; then
+    conv_ids+=("$conv_id")
+  fi
+  conv_turns[$conv_id]="${conv_turns[$conv_id]:-}${conv_turns[$conv_id]:+ }$utterance_id"
+done
+
+echo "==> target ext: $TARGET  |  conversations: ${#conv_ids[@]}  |  log dir: $LOG_DIR"
 echo
 
 # Make sure the aufile ausrc/auplay module is loaded. Baresip drops it on
@@ -88,36 +101,49 @@ send_cmd insmod "aufile"
 sleep 0.2
 
 # ---- run loop -------------------------------------------------------
-for wav in "${wavs[@]}"; do
-  id=$(basename "$wav" .wav)
-  # Duration used to time the hangup; falls back to 5s if ffprobe missing.
-  dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$wav" 2>/dev/null || echo 5)
-  dur_int=${dur%.*}
-  wait_total=$(( dur_int + SETTLE ))
-
-  printf "  %-25s dur=%.1fs  wait=%ds\n" "$id" "$dur" "$wait_total"
+# One dial per conversation_id: all of that conversation's turn WAVs play in
+# sequence, back to back, so the agent can carry context turn to turn; we
+# hang up only after the last turn's WAV plus its settle window.
+for conv_id in "${conv_ids[@]}"; do
+  read -ra turn_ids <<<"${conv_turns[$conv_id]}"
+  echo "==> conversation: $conv_id  |  turns: ${#turn_ids[@]}"
 
   # Set source to a 2 s silence WAV first, THEN dial. This prevents the host
   # ALSA mic (default source at boot) from feeding speaker echo of the bot's
   # greeting back through Whisper — the exact feedback loop that produced
   # bogus "Merhaba, sizi duyabiliyorum" transcriptions before we caught it.
-  # After PREROLL (bot greeting done), switch to the real utterance.
+  # After PREROLL (bot greeting done), switch to the first turn's utterance.
   send_cmd ausrc "aufile,$SILENCE"
   sleep 0.2
   send_cmd dial "$TARGET"
   sleep "$PREROLL"
-  send_cmd ausrc "aufile,$wav"
 
-  # Let the WAV play through + SETTLE for the agent reply.
-  sleep "$wait_total"
+  turn_n=0
+  for utterance_id in "${turn_ids[@]}"; do
+    turn_n=$((turn_n + 1))
+    wav="$HERE/audio/${utterance_id}.wav"
+    [ -f "$wav" ] || { echo "  ERROR: missing $wav"; exit 1; }
+    # Duration used to time the next turn (or the final hangup); falls back
+    # to 5s if ffprobe missing.
+    dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$wav" 2>/dev/null || echo 5)
+    dur_int=${dur%.*}
+    wait_total=$(( dur_int + SETTLE ))
+
+    printf "  [%d/%d] %-25s dur=%.1fs  wait=%ds\n" "$turn_n" "${#turn_ids[@]}" "$utterance_id" "$dur" "$wait_total"
+
+    send_cmd ausrc "aufile,$wav"
+    # Let the WAV play through + SETTLE for the agent reply before either
+    # the next turn's WAV or (on the last turn) the hangup below.
+    sleep "$wait_total"
+  done
 
   send_cmd hangup ""
-  sleep 2  # tail-end teardown + settle before next dial
+  sleep 2  # tail-end teardown + settle before next conversation's dial
 done
 
 # ---- summary --------------------------------------------------------
 echo
-echo "==> local usage delta (last ${#wavs[@]} utterances gen'd earlier)"
+echo "==> local usage delta (${#rows[@]} turns across ${#conv_ids[@]} conversations gen'd earlier)"
 python3 "$REPO_ROOT/vms/asterisk/services/common/usage_summary.py" \
   --log "$HOME/.local/state/voicebot/usage.jsonl" --since 1h 2>&1 || true
 

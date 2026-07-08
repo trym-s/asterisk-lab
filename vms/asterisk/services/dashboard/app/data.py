@@ -614,6 +614,23 @@ def load_expected_corpus(path: Path | None) -> dict[str, dict[str, Any]]:
     return {row["utterance_id"]: row for row in rows if row.get("utterance_id")}
 
 
+def expected_turns_for_corpus(expected_corpus: dict[str, dict[str, Any]]) -> int:
+    """Turns a fully-covered scripted call should reach, derived from the corpus.
+
+    conversations.tsv/expected-answers.json turns are grouped by
+    conversation_id; a call that plays one whole conversation should reach
+    that conversation's turn count. Falls back to 1 for a corpus with no
+    conversation_id (a corpus predating multi-turn conversations).
+    """
+    counts: dict[str, int] = {}
+    for row in expected_corpus.values():
+        conv_id = row.get("conversation_id")
+        if conv_id is None:
+            continue
+        counts[conv_id] = counts.get(conv_id, 0) + 1
+    return max(counts.values(), default=1)
+
+
 def match_utterance(
     stt_text: str,
     expected_corpus: dict[str, dict[str, Any]],
@@ -919,11 +936,12 @@ def reliability_summary(
 ) -> dict[str, Any]:
     """Two-row payload: comparable neutral outcomes vs lane-specific diagnostics.
 
-    `expected_turns_per_call` defaults to 1: run-suite.sh dials one call per
-    scripted utterance today (see test-caller/run-suite.sh), so a call
-    "reaching its expected turns" means completing its one turn, not
-    covering the whole corpus in a single call. A multi-turn scripted call
-    would pass a higher value.
+    `expected_turns_per_call` defaults to 1 (a corpus predating multi-turn
+    conversations) but callers should pass `expected_turns_for_corpus()`'s
+    result for the active expected-answer corpus: run-suite.sh now dials
+    once per conversation_id and plays every turn before hanging up, so a
+    call "reaching its expected turns" means completing the whole scripted
+    conversation, not just its first turn.
     """
     scoped = _filter_run(events, run_id)
     calls = list_calls(scoped, now=now, active_stale_s=active_stale_s)

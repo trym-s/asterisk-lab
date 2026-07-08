@@ -1,0 +1,9 @@
+conversation_id	turn_index	utterance_id	text
+magaza-sorular	1	magaza-01-saatler	Merhaba, size bir sorum vardı, mağazanız Pazar günü kaçta açılıyor?
+magaza-sorular	2	magaza-02-havlu-fiyat	Peki, banyo havlunuzun fiyatı ne kadar?
+magaza-sorular	3	magaza-03-nevresim-fiyat	Anladım, peki çift kişilik nevresim takımının fiyatı nedir?
+magaza-sorular	4	magaza-04-kapanis	Teşekkür ederim, çok yardımcı oldunuz, iyi günler.
+kargo-iade-sorular	1	kargo-01-sure	Merhaba, İzmir'e kargo kaç günde geliyor?
+kargo-iade-sorular	2	kargo-02-iade-suresi	Peki, ürünü beğenmezsem kaç gün içinde iade edebilirim?
+kargo-iade-sorular	3	kargo-03-degisim-kargo	Değişim yapmak istersem kargo ücretini kim karşılıyor?
+kargo-iade-sorular	4	kargo-04-kapanis	Teşekkür ederim, iyi günler.

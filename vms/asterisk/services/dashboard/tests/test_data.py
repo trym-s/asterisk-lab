@@ -379,6 +379,54 @@ class ReliabilitySummaryTest(unittest.TestCase):
         self.assertEqual(result["lane_specific_diagnostics"]["pipecat"]["echo_filtered"], 1)
         self.assertEqual(result["lane_specific_diagnostics"]["livekit"], {})
 
+    def test_four_turn_conversation_call_reaches_expected_turns(self) -> None:
+        """A 4-turn conversation call must not be misreported as under- or over-turned."""
+        events = [
+            trace_events.build_event(
+                lane="livekit", call_id="c1", stage="call", event="call.started", ts=1.0,
+            ),
+            trace_events.build_event(
+                lane="livekit", call_id="c1", stage="call", event="call.ended", ts=20.0,
+            ),
+        ]
+        for i in range(1, 5):
+            turn_id = f"t{i}"
+            events.extend(
+                [
+                    trace_events.build_event(
+                        lane="livekit", call_id="c1", turn_id=turn_id, stage="stt",
+                        event="final_transcript", ts=float(i), payload={"text": f"turn {i}"},
+                    ),
+                    trace_events.build_event(
+                        lane="livekit", call_id="c1", turn_id=turn_id, stage="llm",
+                        event="response", ts=float(i) + 0.1, payload={"text": "ok"},
+                    ),
+                    trace_events.build_event(
+                        lane="livekit", call_id="c1", turn_id=turn_id, stage="tts",
+                        event="request", ts=float(i) + 0.2, payload={},
+                    ),
+                ]
+            )
+
+        result = data.reliability_summary(events, expected_turns_per_call=4, now=25.0)
+        counts = result["comparable_outcomes"]["livekit"]
+        self.assertEqual(counts["expected_turns_reached"], 1)
+        self.assertEqual(counts["no_duplicate_extra_turn"], 1, "a real 4-turn call must not read as an extra turn")
+
+    def test_expected_turns_for_corpus_derives_max_conversation_length(self) -> None:
+        corpus = {
+            "magaza-01-saatler": {"conversation_id": "magaza-sorular", "turn_index": 1},
+            "magaza-02-havlu-fiyat": {"conversation_id": "magaza-sorular", "turn_index": 2},
+            "magaza-03-nevresim-fiyat": {"conversation_id": "magaza-sorular", "turn_index": 3},
+            "magaza-04-kapanis": {"conversation_id": "magaza-sorular", "turn_index": 4},
+            "kargo-01-sure": {"conversation_id": "kargo-iade-sorular", "turn_index": 1},
+        }
+        self.assertEqual(data.expected_turns_for_corpus(corpus), 4)
+
+    def test_expected_turns_for_corpus_falls_back_to_one_without_conversation_id(self) -> None:
+        corpus = {"01-greeting": {"text": "Merhaba"}}
+        self.assertEqual(data.expected_turns_for_corpus(corpus), 1)
+
 
 class CostNormalizedTest(unittest.TestCase):
     def test_measured_and_estimated_rows_stay_separate(self) -> None:

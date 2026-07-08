@@ -1,19 +1,12 @@
 {
   "schema_version": "voicebot-expected-answers-v1",
-  "note": "Human-authored deterministic scoring fixture (Paired Quality panel). Keyed by the same utterance_id used in utterances.tsv. Read-only; the dashboard never writes here.",
+  "note": "Human-authored deterministic scoring fixture (Paired Quality panel). Keyed by the same utterance_id used in conversations.tsv, grouped by conversation_id/turn_index. Read-only; the dashboard never writes here.",
   "utterances": [
     {
-      "utterance_id": "01-greeting",
-      "text": "Merhaba, size bir sorum vardı.",
-      "expected_intent": "greeting",
-      "tool_required": false,
-      "expected_source_docs": [],
-      "required_facts": [],
-      "forbidden_facts": []
-    },
-    {
-      "utterance_id": "02-saatler",
-      "text": "Mağazanız Pazar günü kaçta açılıyor?",
+      "utterance_id": "magaza-01-saatler",
+      "conversation_id": "magaza-sorular",
+      "turn_index": 1,
+      "text": "Merhaba, size bir sorum vardı, mağazanız Pazar günü kaçta açılıyor?",
       "expected_intent": "store_hours_lookup",
       "tool_required": true,
       "expected_source_docs": ["hakkinda.md"],
@@ -21,8 +14,10 @@
       "forbidden_facts": []
     },
     {
-      "utterance_id": "03-havlu-fiyat",
-      "text": "Banyo havlusu ne kadar?",
+      "utterance_id": "magaza-02-havlu-fiyat",
+      "conversation_id": "magaza-sorular",
+      "turn_index": 2,
+      "text": "Peki, banyo havlunuzun fiyatı ne kadar?",
       "expected_intent": "product_price_lookup",
       "tool_required": true,
       "expected_source_docs": ["urunler.md"],
@@ -30,8 +25,10 @@
       "forbidden_facts": []
     },
     {
-      "utterance_id": "04-nevresim-cift",
-      "text": "Çift kişilik nevresim takımı fiyatı ne kadar?",
+      "utterance_id": "magaza-03-nevresim-fiyat",
+      "conversation_id": "magaza-sorular",
+      "turn_index": 3,
+      "text": "Anladım, peki çift kişilik nevresim takımının fiyatı nedir?",
       "expected_intent": "product_price_lookup",
       "tool_required": true,
       "expected_source_docs": ["urunler.md"],
@@ -39,8 +36,21 @@
       "forbidden_facts": []
     },
     {
-      "utterance_id": "05-kargo-sure",
-      "text": "İzmir'e kargo kaç günde geliyor?",
+      "utterance_id": "magaza-04-kapanis",
+      "conversation_id": "magaza-sorular",
+      "turn_index": 4,
+      "text": "Teşekkür ederim, çok yardımcı oldunuz, iyi günler.",
+      "expected_intent": "closing",
+      "tool_required": false,
+      "expected_source_docs": [],
+      "required_facts": [],
+      "forbidden_facts": []
+    },
+    {
+      "utterance_id": "kargo-01-sure",
+      "conversation_id": "kargo-iade-sorular",
+      "turn_index": 1,
+      "text": "Merhaba, İzmir'e kargo kaç günde geliyor?",
       "expected_intent": "shipping_time_lookup",
       "tool_required": true,
       "expected_source_docs": ["kargo-iade.md"],
@@ -48,8 +58,10 @@
       "forbidden_facts": []
     },
     {
-      "utterance_id": "06-iade-suresi",
-      "text": "İade süreniz ne kadar?",
+      "utterance_id": "kargo-02-iade-suresi",
+      "conversation_id": "kargo-iade-sorular",
+      "turn_index": 2,
+      "text": "Peki, ürünü beğenmezsem kaç gün içinde iade edebilirim?",
       "expected_intent": "return_policy_lookup",
       "tool_required": true,
       "expected_source_docs": ["kargo-iade.md"],
@@ -57,7 +69,20 @@
       "forbidden_facts": []
     },
     {
-      "utterance_id": "07-thanks-hangup",
+      "utterance_id": "kargo-03-degisim-kargo",
+      "conversation_id": "kargo-iade-sorular",
+      "turn_index": 3,
+      "text": "Değişim yapmak istersem kargo ücretini kim karşılıyor?",
+      "expected_intent": "exchange_shipping_payer_lookup",
+      "tool_required": true,
+      "expected_source_docs": ["kargo-iade.md"],
+      "required_facts": ["müşteri"],
+      "forbidden_facts": []
+    },
+    {
+      "utterance_id": "kargo-04-kapanis",
+      "conversation_id": "kargo-iade-sorular",
+      "turn_index": 4,
       "text": "Teşekkür ederim, iyi günler.",
       "expected_intent": "closing",
       "tool_required": false,
