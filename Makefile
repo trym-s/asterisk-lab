@@ -158,7 +158,7 @@ usage-summary: ## Print API spend summary from /var/lib/voicebot/usage.jsonl on 
 
 # ---- VM Management (virsh) targets ----------------------------------------
 
-.PHONY: vms ips up-ast down up-sbc down-sbc up-mon down-mon
+.PHONY: vms ips up-ast down-ast up-sbc down-sbc up-mon down-mon vms-up vms_up vms-down vms_down
 
 vms: ## List all local libvirt VMs
 	$(VIRSH) list --all
@@ -169,7 +169,7 @@ ips: ## Show DHCP leases (active VM IPs)
 up-ast: ## Start the Asterisk VM
 	$(VIRSH) start $(ASTERISK_DOMAIN)
 
-down: ## Gracefully shutdown the Asterisk VM
+down-ast: ## Gracefully shutdown the Asterisk VM
 	$(VIRSH) shutdown $(ASTERISK_DOMAIN)
 
 up-sbc: ## Start the SBC VM
@@ -183,6 +183,32 @@ up-mon: ## Start the Monitoring VM
 
 down-mon: ## Gracefully shutdown the Monitoring VM
 	$(VIRSH) shutdown $(MONITORING_DOMAIN)
+
+vms-up: ## Start all three VMs (Asterisk, SBC, Monitoring)
+	@running_vms=$$($(VIRSH) list --name --state-running); \
+	for dom in $(ASTERISK_DOMAIN) $(SBC_DOMAIN) $(MONITORING_DOMAIN); do \
+		if echo "$$running_vms" | grep -q "^$$dom$$"; then \
+			echo "VM $$dom is already running"; \
+		else \
+			echo "Starting VM: $$dom"; \
+			$(VIRSH) start $$dom; \
+		fi; \
+	done
+
+vms_up: vms-up
+
+vms-down: ## Gracefully shutdown all three VMs
+	@running_vms=$$($(VIRSH) list --name --state-running); \
+	for dom in $(ASTERISK_DOMAIN) $(SBC_DOMAIN) $(MONITORING_DOMAIN); do \
+		if echo "$$running_vms" | grep -q "^$$dom$$"; then \
+			echo "Stopping VM: $$dom"; \
+			$(VIRSH) shutdown $$dom; \
+		else \
+			echo "VM $$dom is not running"; \
+		fi; \
+	done
+
+vms_down: vms-down
 
 # ---- shared ---------------------------------------------------------------
 
