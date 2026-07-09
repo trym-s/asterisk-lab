@@ -151,6 +151,7 @@ cannot close yet - see Blockers)
 
 ## Recent updates
 
+- 2026-07-09 - Added `vms-up` (alias `vms_up`) and `vms-down` (alias `vms_down`) targets to the `Makefile` to start/stop all three VMs (Asterisk, SBC, Monitoring) robustly, checking current VM running states first for idempotency.
 - 2026-07-08 - Root-caused the LiveKit disconnect from the entry above:
   read `lk-sip`'s own container logs for the exact call window and found
   `media_port.go: "triggering media timeout"` / `"reason": "media-timeout"`
