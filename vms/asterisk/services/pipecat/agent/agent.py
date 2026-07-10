@@ -56,6 +56,7 @@ from pipecat.frames.frames import (  # noqa: E402
     LLMContextFrame,
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
+    InterimTranscriptionFrame,
     LLMTextFrame,
     OutputAudioRawFrame,
     TTSAudioRawFrame,
@@ -671,7 +672,15 @@ class TurnLogger(FrameProcessor):
                 extra={"direction": "input", "estimated": True},
             )
             dump_turn("user_speech", room, {"text": frame.text})
-        elif isinstance(frame, TextFrame) and frame.text:
+        elif (
+            isinstance(frame, TextFrame)
+            and not isinstance(frame, (TranscriptionFrame, InterimTranscriptionFrame))
+            and frame.text
+        ):
+            # Guard against STT interim/transcription frames: both subclass
+            # TextFrame, and streaming STT (Soniox) emits interim words that
+            # must NOT be logged as bot speech (that also poisons the echo
+            # filter's recent-bot-text set with the caller's own words).
             await self._record_agent_text(room, frame.text)
         await self.push_frame(frame, direction)
 

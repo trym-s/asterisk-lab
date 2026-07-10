@@ -3,13 +3,16 @@
 Protocol (per res_audiosocket.c):
   Each message = 1-byte type + 2-byte big-endian length + <length> bytes payload.
 
-  Types we handle:
+  Types we handle (per include/asterisk/res_audiosocket.h, Asterisk 22):
     0x00  hangup      (Asterisk closing; payload is 0 bytes)
     0x01  uuid        (16-byte call UUID sent first on connect)
-    0x02  DTMF        (1-byte digit)
-    0x10  PCM audio   (mono, 16-bit LE signed linear; the sample rate is
-                        whatever the dialplan leg negotiated — the channel
-                        driver's c(slin16) option gives 16 kHz)
+    0x03  DTMF        (1-byte digit)
+    0x10..0x18  PCM audio (mono, 16-bit LE signed linear; the KIND byte
+                encodes the sample rate: 0x10=8k, 0x11=12k, 0x12=16k,
+                0x13=24k, 0x14=32k, 0x15=44.1k, 0x16=48k, 0x17=96k,
+                0x18=192k. The c(slin16) dialplan leg sends 0x12, and we
+                must frame our own outbound audio with the same kind byte
+                or Asterisk misinterprets the rate.)
     0xFF  error       (server -> client, terminates call)
 
   Asterisk connects TO us (dialplan: Dial(AudioSocket/<host>:<port>/<uuid>/
@@ -34,13 +37,27 @@ logger = logging.getLogger("audiosocket")
 
 TYPE_HANGUP = 0x00
 TYPE_UUID = 0x01
-TYPE_DTMF = 0x02
-TYPE_AUDIO = 0x10
+TYPE_DTMF = 0x03
 TYPE_ERROR = 0xFF
+
+# KIND byte <-> sample rate for slin PCM audio messages.
+AUDIO_KIND_BY_RATE = {
+    8000: 0x10,
+    12000: 0x11,
+    16000: 0x12,
+    24000: 0x13,
+    32000: 0x14,
+    44100: 0x15,
+    48000: 0x16,
+    96000: 0x17,
+    192000: 0x18,
+}
+AUDIO_KINDS = set(AUDIO_KIND_BY_RATE.values())
 
 # 16-bit LE mono PCM, 20 ms frames. Must match the codec the dialplan
 # forces on the AudioSocket leg (c(slin16) -> 16000).
 SAMPLE_RATE = int(os.getenv("AUDIOSOCKET_SAMPLE_RATE", "16000"))
+TYPE_AUDIO = AUDIO_KIND_BY_RATE[SAMPLE_RATE]
 FRAME_MS = 20
 FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS // 1000  # 320 @ 16 kHz
 FRAME_BYTES = FRAME_SAMPLES * 2  # 640 @ 16 kHz
@@ -135,7 +152,14 @@ class AudioSocketSession:
                 if msg_type == TYPE_UUID:
                     self.uuid = payload.hex()
                     logger.info("audiosocket: uuid=%s", self.uuid)
-                elif msg_type == TYPE_AUDIO:
+                elif msg_type in AUDIO_KINDS:
+                    if msg_type != TYPE_AUDIO and not getattr(self, "_rate_kind_warned", False):
+                        self._rate_kind_warned = True
+                        logger.warning(
+                            "audiosocket: inbound audio kind %#x != expected %#x "
+                            "(dialplan codec and AUDIOSOCKET_SAMPLE_RATE disagree) uuid=%s",
+                            msg_type, TYPE_AUDIO, self.uuid,
+                        )
                     now = time.time()
                     if self.first_inbound_ts is None:
                         self.first_inbound_ts = now
@@ -204,6 +228,8 @@ class AudioSocketSession:
                     await self.writer.drain()
                     if not is_idle_silence:
                         await asyncio.sleep(FRAME_MS / 1000)
+        except (ConnectionResetError, BrokenPipeError):
+            logger.info("audiosocket: peer closed during write uuid=%s", self.uuid)
         except Exception:  # noqa: BLE001
             logger.exception("audiosocket writer crashed uuid=%s", self.uuid)
         finally:
