@@ -601,11 +601,16 @@ class TurnLogger(FrameProcessor):
             setattr(self.session, "_voicebot_turn_t0", now)
             setattr(self.session, "_voicebot_turn_first_audio_pending", True)
             vad_stop_ts = getattr(self.session, "_voicebot_last_vad_stop_ts", None)
+            # Consume the VAD-stop mark so a stale value from an earlier turn
+            # can never be paired with this turn's transcript (that produced
+            # nonsense tens-of-seconds "endpoint latencies"). Also ignore
+            # implausibly old marks (> 5 s) as not-this-turn.
             endpoint_ms = (
                 int((now - vad_stop_ts) * 1000)
-                if vad_stop_ts is not None and now >= vad_stop_ts
+                if vad_stop_ts is not None and 0 <= (now - vad_stop_ts) <= 5.0
                 else None
             )
+            setattr(self.session, "_voicebot_last_vad_stop_ts", None)
             logger.info("user=%r", frame.text)
             stats = self.session.audio_stats()
             _trace(
