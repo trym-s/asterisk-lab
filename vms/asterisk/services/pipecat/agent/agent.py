@@ -1,26 +1,26 @@
-"""Pipecat voicebot lane — parity twin of services/livekit/agent/agent.py.
+"""Pipecat voicebot lane — Soniox streaming STT/TTS with an OpenAI LLM.
 
-Design axioms (change one, change both):
-  * Identical OpenAI models: whisper-1 (with same domain prompt), gpt-4o-mini,
-    tts-1 voice=alloy.
-  * Identical SYSTEM_PROMPT and GREETING (copied verbatim from the LK lane).
-  * Identical shared tool: lookup_docs → services/common/docqa.py.
-  * Identical trace schema: same /var/lib/voicebot/events.jsonl stages.
-  * Legacy /var/lib/voicebot/turns.jsonl remains as a debug rendering only.
-  * Identical usage log: same /var/lib/voicebot/usage.jsonl entries so
-    services/common/usage_summary.py sums both lanes together.
+Architecture (mirrors the Soniox voice-agent reference design):
+  * Transport: Asterisk AudioSocket channel driver, slin16 @ 16 kHz mono,
+    20 ms ptime. Asterisk connects to our TCP listener per call.
+  * Ears: SonioxSTTService (WebSocket, model stt-rt-v5). Semantic endpoint
+    detection is ON — Soniox emits a final "<end>"-terminated transcript
+    when the caller's sentence is complete. That final TranscriptionFrame
+    is the ONLY turn-end signal; VAD silence thresholds never end a turn.
+  * Brain: OpenAI chat model (token streaming) + the shared lookup_docs
+    tool from services/common/docqa.py.
+  * Mouth: SonioxTTSService (WebSocket, streaming text in / PCM out at
+    16 kHz natively — no resampling anywhere in this file).
+  * Reflex: Silero VAD is kept ONLY as the barge-in trigger: caller speech
+    while the bot is talking clears queued output audio immediately.
 
-Framework differences (what we're measuring):
-  * Pipeline architecture: pipecat's linear FrameProcessor chain vs. LK's
-    VoicePipelineAgent orchestrator.
-  * Media transport: Asterisk AudioSocket TCP (this lane) vs. LK's SIP GW +
-    SFU (that lane).
-  * Interruption/turn-taking: pipecat's UserStartedSpeaking/StoppedSpeaking
-    frames + interruption strategy vs. LK's built-in VAD interruptions.
-
-Audio is 8 kHz slin16 mono over AudioSocket to match the effective codec on
-the LK side (PCMU 8 kHz). Wideband can come later; for the MVP we hold this
-constant so the comparison isolates the framework.
+Observability contract (unchanged surfaces, richer content):
+  * /var/lib/voicebot/events.jsonl — voicebot-events-v1 stages; stt/llm/tts
+    events now carry measured duration_ms (endpoint latency, LLM total,
+    first-audio) with latency_basis="measured".
+  * /var/lib/voicebot/usage.jsonl — Soniox STT seconds + TTS chars, OpenAI
+    token estimates; priced by services/common/usage_summary.py.
+  * /var/lib/voicebot/turns.jsonl — legacy debug rendering only.
 """
 
 from __future__ import annotations
@@ -47,10 +47,6 @@ from audiosocket import (  # noqa: E402
     SAMPLE_RATE,
 )
 
-# Pipecat 1.4.0 module paths (they moved from earlier releases):
-#   * Services live under pipecat.services.openai.{llm,stt,tts}
-#   * Context is the framework-agnostic LLMContext + ToolsSchema
-#   * Aggregators come from llm_response_universal (LLMContextAggregatorPair)
 from pipecat.audio.vad.silero import SileroVADAnalyzer  # noqa: E402
 from pipecat.audio.vad.vad_analyzer import VADParams  # noqa: E402
 from pipecat.frames.frames import (  # noqa: E402
@@ -69,6 +65,7 @@ from pipecat.frames.frames import (  # noqa: E402
     InterruptionFrame,
     UserStartedSpeakingFrame,
     VADUserStartedSpeakingFrame,
+    VADUserStoppedSpeakingFrame,
 )
 from pipecat.pipeline.pipeline import Pipeline  # noqa: E402
 from pipecat.pipeline.runner import PipelineRunner  # noqa: E402
@@ -84,15 +81,33 @@ from pipecat.processors.aggregators.llm_response_universal import (  # noqa: E40
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor  # noqa: E402
 from pipecat.services.openai.llm import OpenAILLMService  # noqa: E402
-from pipecat.services.openai.stt import OpenAISTTService  # noqa: E402
-from pipecat.services.openai.tts import OpenAITTSService  # noqa: E402
+from pipecat.services.soniox.stt import (  # noqa: E402
+    SonioxContextGeneralItem,
+    SonioxContextObject,
+    SonioxSTTService,
+)
+from pipecat.services.soniox.tts import SonioxTTSService  # noqa: E402
+from pipecat.transcriptions.language import Language  # noqa: E402
 
 logger = logging.getLogger("pc-agent")
 logging.basicConfig(level=logging.INFO)
 
 LANE = "pipecat"
 
-# ---- prompts + tool schema (parity with LK lane) ------------------------
+ECHO_FILTER_ENABLED = os.environ.get("VOICEBOT_ECHO_FILTER", "1") not in ("0", "false", "")
+
+
+def _env_int(name: str) -> int | None:
+    raw = os.environ.get(name, "").strip()
+    return int(raw) if raw else None
+
+
+def _env_float(name: str) -> float | None:
+    raw = os.environ.get(name, "").strip()
+    return float(raw) if raw else None
+
+
+# ---- prompts + tool schema ----------------------------------------------
 
 SYSTEM_PROMPT = (
     "Sen Mavi Kapı Mağazası'nın sesli müşteri hizmetleri asistanısın. "
@@ -105,14 +120,20 @@ SYSTEM_PROMPT = (
 
 GREETING = "Merhaba, Mavi Kapı müşteri hizmetlerine hoş geldiniz. Nasıl yardımcı olabilirim?"
 
-WHISPER_PROMPT = (
-    "Mavi Kapı mağazası, çift kişilik, tek kişilik, king size, "
-    "nevresim takımı, havlu, halı, perde, yastık, iade, kargo, "
-    "İstanbul, Ankara, İzmir, Bursa, Antalya, Adana, Trabzon, "
-    "Alsancak, Kadıköy, Çankaya, "
-    "bir, iki, üç, dört, beş, altı, yedi, sekiz, dokuz, on, yüz, bin, "
-    "yüz otuz beş, iki yüz kırk, üç yüz doksan, altı yüz elli, "
-    "sekiz yüz doksan, bin iki yüz, lira, iş günü, gün, saat."
+# Domain context for Soniox STT (context_version 2). Replaces the old
+# Whisper prompt-seeding hack: terms bias recognition toward the store's
+# vocabulary, product names, cities and Turkish numbers.
+STT_CONTEXT = SonioxContextObject(
+    general=[
+        SonioxContextGeneralItem(key="domain", value="ev tekstili mağazası müşteri hizmetleri"),
+        SonioxContextGeneralItem(key="company", value="Mavi Kapı Mağazası"),
+    ],
+    terms=[
+        "Mavi Kapı", "nevresim takımı", "çift kişilik", "tek kişilik",
+        "king size", "havlu", "halı", "perde", "yastık", "iade", "kargo",
+        "iş günü", "lira", "İstanbul", "Ankara", "İzmir", "Bursa",
+        "Antalya", "Adana", "Trabzon", "Alsancak", "Kadıköy", "Çankaya",
+    ],
 )
 
 TOOL_SCHEMA = [
@@ -177,20 +198,6 @@ def _record_audiosocket_closed(session: AudioSocketSession, call_ctx: trace_even
             "audio": stats,
         },
     )
-
-
-def _pcm_s16le_mono_resample_nearest(audio: bytes, source_rate: int | None, target_rate: int) -> bytes:
-    """Dependency-free mono s16le resampler for AudioSocket telephony output."""
-    if not source_rate or source_rate == target_rate or len(audio) < 2:
-        return audio
-    samples = memoryview(audio).cast("h")
-    target_len = max(1, int(len(samples) * target_rate / source_rate))
-    out = bytearray(target_len * 2)
-    for idx in range(target_len):
-        src_idx = min(len(samples) - 1, int(idx * source_rate / target_rate))
-        value = int(samples[src_idx])
-        out[idx * 2:idx * 2 + 2] = value.to_bytes(2, "little", signed=True)
-    return bytes(out)
 
 
 def _norm_text(text: str) -> str:
@@ -261,15 +268,10 @@ def dump_turn(kind: str, room: str, payload: dict) -> None:
         pass
 
 
-# ---- Pipecat FrameProcessors that bridge AudioSocket ↔ pipeline --------
+# ---- Pipecat FrameProcessors that bridge AudioSocket <-> pipeline -------
 
 class AudioSocketSource(FrameProcessor):
-    """Pump slin16 8 kHz PCM from the AudioSocket into pipecat as InputAudioRawFrames.
-
-    Pipecat 1.4 uses InputAudioRawFrame (not the generic AudioRawFrame) on the
-    input side so that downstream processors — SileroVAD, STT — can distinguish
-    caller audio from bot audio.
-    """
+    """Pump 16 kHz slin PCM from the AudioSocket into pipecat as InputAudioRawFrames."""
 
     def __init__(self, session: AudioSocketSession, call_ctx: trace_events.CallContext):
         super().__init__()
@@ -301,7 +303,7 @@ class AudioSocketSource(FrameProcessor):
                     stage="audio",
                     event="audiosocket.inbound.started",
                     provider="asterisk-audiosocket",
-                    payload={"uuid": self.session.uuid, "bytes": len(payload)},
+                    payload={"uuid": self.session.uuid, "bytes": len(payload), "sample_rate": SAMPLE_RATE},
                 )
             await self.push_frame(
                 InputAudioRawFrame(
@@ -311,24 +313,41 @@ class AudioSocketSource(FrameProcessor):
 
 
 class AudioSocketSink(FrameProcessor):
-    """Route pipecat TTS output back into the AudioSocket outbound queue."""
+    """Route TTS output audio into the AudioSocket outbound queue.
+
+    Soniox TTS synthesizes at the pipeline's 16 kHz directly, so audio passes
+    through untouched. A sample-rate mismatch is a config error and is logged
+    once instead of being papered over with a resampler.
+    """
 
     def __init__(self, session: AudioSocketSession, call_ctx: trace_events.CallContext):
         super().__init__()
         self.session = session
         self.call_ctx = call_ctx
         self._seen_audio = False
+        self._rate_warned = False
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
         if isinstance(frame, (TTSAudioRawFrame, OutputAudioRawFrame)):
             source_rate = getattr(frame, "sample_rate", None)
-            audio = _pcm_s16le_mono_resample_nearest(bytes(frame.audio), source_rate, SAMPLE_RATE)
+            if source_rate and source_rate != SAMPLE_RATE and not self._rate_warned:
+                self._rate_warned = True
+                logger.error(
+                    "TTS produced %s Hz but AudioSocket runs at %s Hz — fix the TTS sample_rate",
+                    source_rate, SAMPLE_RATE,
+                )
+            audio = bytes(frame.audio)
             try:
                 setattr(self.session, "_voicebot_real_audio_started", True)
                 setattr(self.session, "_voicebot_last_outbound_audio_ts", time.monotonic())
                 self.session.outbound.put_nowait(audio)
-                if not self._seen_audio:
+                if not self._seen_audio or getattr(self.session, "_voicebot_turn_first_audio_pending", False):
+                    turn_t0 = getattr(self.session, "_voicebot_turn_t0", None)
+                    first_audio_ms = (
+                        int((time.monotonic() - turn_t0) * 1000) if turn_t0 is not None else None
+                    )
+                    setattr(self.session, "_voicebot_turn_first_audio_pending", False)
                     self._seen_audio = True
                     _trace(
                         lane=LANE,
@@ -336,14 +355,16 @@ class AudioSocketSink(FrameProcessor):
                         turn_id=self.call_ctx.current_turn_id,
                         stage="tts",
                         event="output_audio.started",
-                        provider="openai",
+                        provider=MODEL_PROFILE.tts_provider,
                         model=MODEL_PROFILE.tts_model,
+                        duration_ms=first_audio_ms,
                         payload={
                             "bytes": len(audio),
-                            "source_bytes": len(frame.audio),
                             "sample_rate": SAMPLE_RATE,
                             "source_sample_rate": source_rate,
                             "voice": MODEL_PROFILE.tts_voice,
+                            "latency_basis": "measured" if first_audio_ms is not None else "unknown",
+                            "measures": "final transcript -> first output audio",
                         },
                     )
             except asyncio.QueueFull:
@@ -351,13 +372,14 @@ class AudioSocketSink(FrameProcessor):
         await self.push_frame(frame, direction)
 
 
-class DirectLLMContextTrigger(FrameProcessor):
-    """Push an LLMContextFrame immediately after a final STT transcript.
+class EndpointLLMTrigger(FrameProcessor):
+    """Fire the LLM on Soniox's semantic endpoint.
 
-    Pipecat's LLMUserAggregator can wait for turn-strategy frames before it
-    emits context. In the AudioSocket lane we already have an explicit final
-    TranscriptionFrame from STT, so we write it to the shared context and run
-    the LLM directly. This keeps the lane responsive on 8 kHz telephony audio.
+    SonioxSTTService (with vad_force_turn_endpoint=False) pushes exactly one
+    final TranscriptionFrame per caller turn — when the model's endpoint
+    detection decides the sentence is complete. That frame IS the turn-end
+    signal, so we append it to the shared context and run the LLM
+    immediately. No VAD silence threshold is involved.
     """
 
     def __init__(self, context: LLMContext):
@@ -376,9 +398,9 @@ class DirectLLMContextTrigger(FrameProcessor):
 class BotEchoFilter(FrameProcessor):
     """Drop STT transcripts that are clearly the bot's own audio.
 
-    In this lab the host softphone often loops speaker audio back into the mic.
-    Without this guard, phrases from the greeting or assistant reply become new
-    user turns and the conversation drifts into self-talk.
+    In this lab the host softphone often loops speaker audio back into the
+    mic. Enabled by default; set VOICEBOT_ECHO_FILTER=0 to bypass once live
+    evidence shows the streaming pipeline no longer needs it.
     """
 
     STATIC_ECHOES = {
@@ -434,7 +456,13 @@ class BotEchoFilter(FrameProcessor):
 
 
 class BargeInAudioStopper(FrameProcessor):
-    """Stop queued AudioSocket output as soon as caller speech begins."""
+    """Stop queued AudioSocket output as soon as caller speech begins.
+
+    This is VAD's only job in this pipeline: interrupting bot playback.
+    Turn-end belongs to Soniox endpoint detection (see EndpointLLMTrigger).
+    Also timestamps VAD speech-stop so TurnLogger can measure how long the
+    semantic endpointing takes after the caller actually falls silent.
+    """
 
     def __init__(self, session: AudioSocketSession, call_ctx: trace_events.CallContext):
         super().__init__()
@@ -443,6 +471,8 @@ class BargeInAudioStopper(FrameProcessor):
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
+        if isinstance(frame, VADUserStoppedSpeakingFrame):
+            setattr(self.session, "_voicebot_last_vad_stop_ts", time.monotonic())
         if isinstance(frame, (VADUserStartedSpeakingFrame, UserStartedSpeakingFrame)):
             last_real_audio = getattr(self.session, "_voicebot_last_outbound_audio_ts", 0)
             if time.monotonic() - last_real_audio > 4.0:
@@ -464,11 +494,15 @@ class BargeInAudioStopper(FrameProcessor):
 
 
 class TurnLogger(FrameProcessor):
-    """Mirror STT / LLM / TTS text to /var/lib/voicebot/turns.jsonl.
+    """Trace STT / LLM / TTS text plus measured stage latencies.
 
-    Placed between the user-context-aggregator and the LLM so we see the
-    fully-assembled context on the way in, and between the LLM and the TTS
-    so we see the raw model text on the way out.
+    Placed once between STT and the LLM trigger (sees final transcripts) and
+    once between the LLM and TTS (sees the streamed model text). Measured
+    timings, all monotonic:
+      * stt final_transcript duration_ms: caller-silence (VAD stop) ->
+        endpoint transcript arrival.
+      * llm response duration_ms: final transcript -> LLM response end;
+        payload carries ttft_ms (first streamed token).
     """
 
     def __init__(self, session: AudioSocketSession, call_ctx: trace_events.CallContext):
@@ -477,23 +511,38 @@ class TurnLogger(FrameProcessor):
         self.call_ctx = call_ctx
         self._llm_parts: list[str] = []
         self._in_llm_response = False
+        self._llm_first_token_ts: float | None = None
 
     async def _record_agent_text(self, room: str, text: str) -> None:
         if not text:
             return
         logger.info("agent=%r", text)
+        turn_t0 = getattr(self.session, "_voicebot_turn_t0", None)
+        now = time.monotonic()
+        llm_total_ms = int((now - turn_t0) * 1000) if turn_t0 is not None else None
+        ttft_ms = (
+            int((self._llm_first_token_ts - turn_t0) * 1000)
+            if turn_t0 is not None and self._llm_first_token_ts is not None
+            else None
+        )
         _trace(
             lane=LANE,
             call_id=self.call_ctx.call_id,
             turn_id=self.call_ctx.current_turn_id,
             stage="llm",
             event="response",
-            provider="openai",
+            provider=MODEL_PROFILE.llm_provider,
             model=MODEL_PROFILE.llm_model,
-            payload={"text": text},
+            duration_ms=llm_total_ms,
+            payload={
+                "text": text,
+                "ttft_ms": ttft_ms,
+                "latency_basis": "measured" if llm_total_ms is not None else "unknown",
+                "measures": "final transcript -> llm response end",
+            },
         )
         _usage(
-            provider="openai",
+            provider=MODEL_PROFILE.llm_provider,
             op="chat",
             units=max(len(text.split()), 1),
             unit_type="tokens_estimated",
@@ -511,12 +560,12 @@ class TurnLogger(FrameProcessor):
             turn_id=self.call_ctx.current_turn_id,
             stage="tts",
             event="request",
-            provider="openai",
+            provider=MODEL_PROFILE.tts_provider,
             model=MODEL_PROFILE.tts_model,
             payload={"text": text, "voice": MODEL_PROFILE.tts_voice, "characters": len(text)},
         )
         _usage(
-            provider="openai",
+            provider=MODEL_PROFILE.tts_provider,
             op="tts",
             units=len(text),
             unit_type="chars",
@@ -536,14 +585,26 @@ class TurnLogger(FrameProcessor):
         if isinstance(frame, LLMFullResponseStartFrame):
             self._llm_parts = []
             self._in_llm_response = True
+            self._llm_first_token_ts = None
         elif isinstance(frame, LLMFullResponseEndFrame):
             await self._record_agent_text(room, "".join(self._llm_parts).strip())
             self._llm_parts = []
             self._in_llm_response = False
         elif isinstance(frame, LLMTextFrame) and frame.text:
+            if self._llm_first_token_ts is None:
+                self._llm_first_token_ts = time.monotonic()
             self._llm_parts.append(frame.text)
         elif isinstance(frame, TranscriptionFrame) and frame.text:
             turn_id = self.call_ctx.next_turn()
+            now = time.monotonic()
+            setattr(self.session, "_voicebot_turn_t0", now)
+            setattr(self.session, "_voicebot_turn_first_audio_pending", True)
+            vad_stop_ts = getattr(self.session, "_voicebot_last_vad_stop_ts", None)
+            endpoint_ms = (
+                int((now - vad_stop_ts) * 1000)
+                if vad_stop_ts is not None and now >= vad_stop_ts
+                else None
+            )
             logger.info("user=%r", frame.text)
             stats = self.session.audio_stats()
             _trace(
@@ -552,17 +613,20 @@ class TurnLogger(FrameProcessor):
                 turn_id=turn_id,
                 stage="stt",
                 event="final_transcript",
-                provider="openai",
+                provider=MODEL_PROFILE.stt_provider,
                 model=MODEL_PROFILE.stt_model,
+                duration_ms=endpoint_ms,
                 payload={
                     "text": frame.text,
                     "language": "tr",
                     "audio_receive_boundary": "asterisk-audiosocket",
+                    "latency_basis": "measured" if endpoint_ms is not None else "unknown",
+                    "measures": "VAD speech stop -> endpoint transcript",
                     "audio": stats,
                 },
             )
             _usage(
-                provider="openai",
+                provider=MODEL_PROFILE.stt_provider,
                 op="stt",
                 units=max(stats["inbound_duration_ms"] / 1000, 0),
                 unit_type="seconds",
@@ -580,7 +644,7 @@ class TurnLogger(FrameProcessor):
                 turn_id=turn_id,
                 stage="llm",
                 event="request",
-                provider="openai",
+                provider=MODEL_PROFILE.llm_provider,
                 model=MODEL_PROFILE.llm_model,
                 payload={
                     "model_profile": MODEL_PROFILE.asdict(),
@@ -590,11 +654,11 @@ class TurnLogger(FrameProcessor):
                     ],
                     "tools": TOOL_SCHEMA,
                     "tool_policy": "auto",
-                    "note": "Pipecat context aggregator may include prior turns at runtime.",
+                    "note": "Shared LLMContext carries prior turns at runtime.",
                 },
             )
             _usage(
-                provider="openai",
+                provider=MODEL_PROFILE.llm_provider,
                 op="chat",
                 units=max(len((SYSTEM_PROMPT + " " + frame.text).split()), 1),
                 unit_type="tokens_estimated",
@@ -612,7 +676,7 @@ class TurnLogger(FrameProcessor):
         await self.push_frame(frame, direction)
 
 
-# ---- tool wiring (parity: same docqa, same usage.record) ---------------
+# ---- tool wiring --------------------------------------------------------
 
 def make_tool_lookup_docs(call_ctx: trace_events.CallContext):
     async def tool_lookup_docs(params) -> str:
@@ -677,14 +741,13 @@ def make_tool_lookup_docs(call_ctx: trace_events.CallContext):
     return tool_lookup_docs
 
 
-# ---- per-call pipeline ------------------------------------------------
+# ---- per-call pipeline ---------------------------------------------------
 
 async def on_session(session: AudioSocketSession) -> None:
     """Called by AudioSocketServer for every inbound call from Asterisk.
 
-    Constructs a fresh pipecat pipeline per call. STT/LLM/TTS instances are
-    per-call today; if per-call cost becomes an issue we can move to shared
-    instances behind a semaphore, mirroring the LK JobProcess model.
+    Constructs a fresh pipecat pipeline per call; the Soniox STT/TTS
+    WebSockets connect during StartFrame propagation.
     """
     # Wait for UUID (Asterisk sends it right after connect).
     for _ in range(20):
@@ -707,6 +770,7 @@ async def on_session(session: AudioSocketSession) -> None:
             "asterisk_uniqueid": session.uuid,
             "correlation_status": "audiosocket_uuid",
             "listener": "0.0.0.0:8090",
+            "sample_rate": SAMPLE_RATE,
         },
     )
     _trace(
@@ -726,25 +790,33 @@ async def on_session(session: AudioSocketSession) -> None:
         ),
     )
 
-    stt = OpenAISTTService(
-        model=MODEL_PROFILE.stt_model,
-        api_key=os.environ["OPENAI_API_KEY"],
-        language="tr",
-        prompt=WHISPER_PROMPT,
+    # Ears: semantic endpointing owns turn-end (vad_force_turn_endpoint=False
+    # flips Soniox's enable_endpoint_detection on). endpoint_sensitivity /
+    # max_endpoint_delay_ms are env-tunable without a code change.
+    stt = SonioxSTTService(
+        api_key=os.environ["SONIOX_API_KEY"],
+        vad_force_turn_endpoint=False,
+        settings=SonioxSTTService.Settings(
+            model=MODEL_PROFILE.stt_model,
+            language_hints=[Language.TR],
+            context=STT_CONTEXT,
+            endpoint_sensitivity=_env_float("VOICEBOT_STT_ENDPOINT_SENSITIVITY"),
+            max_endpoint_delay_ms=_env_int("VOICEBOT_STT_MAX_ENDPOINT_DELAY_MS"),
+        ),
     )
     llm = OpenAILLMService(
         model=MODEL_PROFILE.llm_model,
         api_key=os.environ["OPENAI_API_KEY"],
     )
-    # OpenAI TTS only synthesizes at 24 kHz. Requesting 8 kHz silently produces
-    # no audio (pipecat warns but doesn't error). We take 24 kHz here; the
-    # audio_out_sample_rate=SAMPLE_RATE on PipelineParams tells pipecat to
-    # resample the TTSAudioRawFrames down to 8 kHz before they hit the sink.
-    tts = OpenAITTSService(
-        model=MODEL_PROFILE.tts_model,
-        voice=MODEL_PROFILE.tts_voice,
-        api_key=os.environ["OPENAI_API_KEY"],
-        sample_rate=24000,
+    # Mouth: Soniox synthesizes at the pipeline rate (16 kHz) natively.
+    tts = SonioxTTSService(
+        api_key=os.environ["SONIOX_API_KEY"],
+        sample_rate=SAMPLE_RATE,
+        settings=SonioxTTSService.Settings(
+            model=MODEL_PROFILE.tts_model,
+            voice=MODEL_PROFILE.tts_voice,
+            language=Language.TR,
+        ),
     )
 
     # Bind the tool handler; LLMContext auto-registers it with the LLM service
@@ -754,11 +826,12 @@ async def on_session(session: AudioSocketSession) -> None:
         tools=_build_tools_schema(make_tool_lookup_docs(call_ctx)),
     )
     context_aggregator = LLMContextAggregatorPair(context)
-    pipeline = Pipeline([
+    stages: list[FrameProcessor] = [
         AudioSocketSource(session, call_ctx),
-        # VAD emits UserStartedSpeaking/UserStoppedSpeaking around the audio
-        # so STT knows when to run and the LLM knows when to answer. In 1.4
-        # it's a stand-alone FrameProcessor, no longer a PipelineParams knob.
+        # VAD's only job is the barge-in reflex (and timestamping caller
+        # silence for the endpoint-latency measurement). It does NOT end
+        # turns: SonioxSTTService ignores VAD stop frames because
+        # vad_force_turn_endpoint=False.
         VADProcessor(
             vad_analyzer=SileroVADAnalyzer(
                 params=VADParams(confidence=0.82, start_secs=0.45, stop_secs=0.35, min_volume=0.75)
@@ -766,15 +839,19 @@ async def on_session(session: AudioSocketSession) -> None:
         ),
         BargeInAudioStopper(session, call_ctx),
         stt,
-        BotEchoFilter(session, call_ctx),
+    ]
+    if ECHO_FILTER_ENABLED:
+        stages.append(BotEchoFilter(session, call_ctx))
+    stages += [
         TurnLogger(session, call_ctx),
-        DirectLLMContextTrigger(context),
+        EndpointLLMTrigger(context),
         llm,
         TurnLogger(session, call_ctx),
         tts,
         AudioSocketSink(session, call_ctx),
         context_aggregator.assistant(),
-    ])
+    ]
+    pipeline = Pipeline(stages)
 
     task = PipelineWorker(
         pipeline,
@@ -785,8 +862,6 @@ async def on_session(session: AudioSocketSession) -> None:
     )
 
     # Kick things off: greet the caller before waiting for STT.
-    # TTSSpeakFrame instructs the TTS service to synthesize the given text
-    # immediately, bypassing the LLM — mirrors LK's `agent.say(GREETING)`.
     async def _greet() -> None:
         await asyncio.sleep(0.5)  # let StartFrame propagate through the pipeline
         _trace(
@@ -795,12 +870,12 @@ async def on_session(session: AudioSocketSession) -> None:
             turn_id="greeting",
             stage="tts",
             event="request",
-            provider="openai",
+            provider=MODEL_PROFILE.tts_provider,
             model=MODEL_PROFILE.tts_model,
             payload={"text": GREETING, "voice": MODEL_PROFILE.tts_voice, "characters": len(GREETING)},
         )
         _usage(
-            provider="openai",
+            provider=MODEL_PROFILE.tts_provider,
             op="tts",
             units=len(GREETING),
             unit_type="chars",
@@ -834,8 +909,11 @@ async def on_session(session: AudioSocketSession) -> None:
 
 
 async def amain() -> None:
-    logger.info("pipecat agent starting")
-    # Prewarm the OpenAI client cache — same rationale as the LK lane.
+    logger.info("pipecat agent starting (soniox streaming, %d Hz)", SAMPLE_RATE)
+    for key in ("SONIOX_API_KEY", "OPENAI_API_KEY"):
+        if not os.environ.get(key):
+            logger.error("%s is not set — the agent cannot serve calls", key)
+    # Prewarm the OpenAI client cache so the first LLM turn skips DNS+TLS.
     try:
         import httpx
         with httpx.Client(timeout=10) as c:

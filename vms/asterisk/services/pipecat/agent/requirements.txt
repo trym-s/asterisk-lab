@@ -1,6 +1,6 @@
-# Pipecat lane — mirrors services/livekit/agent/requirements.txt where
-# reasonable (same OpenAI models means overlapping deps). Different framework,
-# same STT/LLM/TTS providers.
-pipecat-ai[silero,openai]>=0.0.83
+# Pipecat voicebot lane: Soniox streaming STT/TTS + OpenAI LLM.
+# Pinned to the 1.4 line — the Soniox services (stt-rt-v5 default,
+# endpoint detection, 16 kHz TTS output) landed there.
+pipecat-ai[silero,openai,soniox]==1.4.*
 openai>=1.50,<2.0
 python-dotenv>=1.0

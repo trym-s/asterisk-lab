@@ -11,14 +11,17 @@ from pathlib import Path
 from typing import Any
 
 PROFILE_SCHEMA_VERSION = "voicebot-profile-v1"
-PRICING_VERSION = os.environ.get("VOICEBOT_PRICING_VERSION", "unpriced-2026-07-05")
+PRICING_VERSION = os.environ.get("VOICEBOT_PRICING_VERSION", "soniox-openai-2026-07-10")
 
 
 @dataclass(frozen=True)
 class ModelProfile:
     name: str
+    stt_provider: str
     stt_model: str
+    llm_provider: str
     llm_model: str
+    tts_provider: str
     tts_model: str
     tts_voice: str
     pricing_version: str
@@ -29,11 +32,14 @@ class ModelProfile:
 
 def load_model_profile() -> ModelProfile:
     return ModelProfile(
-        name=os.environ.get("VOICEBOT_MODEL_PROFILE", "default-openai-telephony"),
-        stt_model=os.environ.get("VOICEBOT_STT_MODEL", "whisper-1"),
+        name=os.environ.get("VOICEBOT_MODEL_PROFILE", "soniox-streaming-telephony"),
+        stt_provider=os.environ.get("VOICEBOT_STT_PROVIDER", "soniox"),
+        stt_model=os.environ.get("VOICEBOT_STT_MODEL", "stt-rt-v5"),
+        llm_provider=os.environ.get("VOICEBOT_LLM_PROVIDER", "openai"),
         llm_model=os.environ.get("VOICEBOT_LLM_MODEL", "gpt-4o-mini"),
-        tts_model=os.environ.get("VOICEBOT_TTS_MODEL", "tts-1"),
-        tts_voice=os.environ.get("VOICEBOT_TTS_VOICE", "alloy"),
+        tts_provider=os.environ.get("VOICEBOT_TTS_PROVIDER", "soniox"),
+        tts_model=os.environ.get("VOICEBOT_TTS_MODEL", "tts-rt-v1"),
+        tts_voice=os.environ.get("VOICEBOT_TTS_VOICE", "Adrian"),
         pricing_version=PRICING_VERSION,
     )
 

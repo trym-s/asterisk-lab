@@ -24,6 +24,7 @@ DEFAULT_LOG = Path("/var/lib/voicebot/usage.jsonl")
 # (provider, op, unit_type) -> USD per unit.
 # Sources:
 #   OpenAI:    https://openai.com/api/pricing/
+#   Soniox:    https://soniox.com/pricing (pay-as-you-go, 2026-07-10)
 #   ElevenLabs https://elevenlabs.io/pricing (Turbo v2.5 / Multilingual v2)
 PRICE = {
     # OpenAI tts-1: $15 / 1M chars
@@ -33,6 +34,12 @@ PRICE = {
     # OpenAI gpt-4o-mini: $0.15 / 1M input, $0.60 / 1M output
     ("openai", "chat", "tokens_in"): 0.15 / 1_000_000,
     ("openai", "chat", "tokens_out"): 0.60 / 1_000_000,
+    # Soniox real-time STT: $0.12 / hour of streamed audio.
+    ("soniox", "stt", "seconds"): 0.12 / 3600,
+    # Soniox real-time TTS: ~$0.70 / hour of generated speech. We log
+    # characters; at ~15 chars/s of spoken Turkish that is ~54k chars/hour,
+    # so ~$13 / 1M chars. Estimate — revisit against real invoices.
+    ("soniox", "tts", "chars"): 13.0 / 1_000_000,
     # ElevenLabs Flash v2.5 (our default): 0.5 credits/char → ~$0.15 / 1000 chars
     # on the Creator tier. Turbo v2.5 costs 1x (~$0.30/1000), Multilingual v2 is 2x.
     # This estimate assumes Flash; if you switch models, bump this rate.

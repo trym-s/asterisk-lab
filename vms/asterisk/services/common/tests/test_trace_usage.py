@@ -108,8 +108,11 @@ class UsageTest(unittest.TestCase):
 class ProfileTest(unittest.TestCase):
     def test_profile_defaults_and_hashes_are_deterministic(self) -> None:
         profile = voicebot_profile.load_model_profile()
-        self.assertEqual(profile.stt_model, "whisper-1")
+        self.assertEqual(profile.stt_provider, "soniox")
+        self.assertEqual(profile.stt_model, "stt-rt-v5")
         self.assertEqual(profile.llm_model, "gpt-4o-mini")
+        self.assertEqual(profile.tts_provider, "soniox")
+        self.assertEqual(profile.tts_model, "tts-rt-v1")
         self.assertEqual(
             voicebot_profile.stable_json_hash({"b": 1, "a": 2}),
             voicebot_profile.stable_json_hash({"a": 2, "b": 1}),
