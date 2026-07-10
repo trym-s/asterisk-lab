@@ -204,6 +204,11 @@ Rules:
   (`local0`) and rtpengine (`local1`) side-by-side; `journalctl -u opensips
   -u rtpengine-daemon` is the systemd-side equivalent. SIP capture:
   `sudo sngrep -d any port 5060` on any of host / SBC / Asterisk VM.
+- SSH into a VM from the host: VM IPs are DHCP-allocated (see section 6),
+  so look them up first with `sudo virsh net-dhcp-leases default` (the
+  host sudo password is `SUDO_PASS` in the host-local `.env`, gitignored).
+  SSH user on every VM is `deb`; its password is `SSH_PASS`, also read
+  from `.env`. No secret value is written here or in any tracked file.
 
 ## 8. Done Criteria
 
