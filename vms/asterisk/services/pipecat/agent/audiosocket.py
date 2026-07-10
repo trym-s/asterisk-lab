@@ -1,20 +1,20 @@
 """Asterisk AudioSocket protocol I/O for the Pipecat lane.
 
-Protocol (per app_audiosocket.c):
+Protocol (per res_audiosocket.c):
   Each message = 1-byte type + 2-byte big-endian length + <length> bytes payload.
 
   Types we handle:
     0x00  hangup      (Asterisk closing; payload is 0 bytes)
     0x01  uuid        (16-byte call UUID sent first on connect)
     0x02  DTMF        (1-byte digit)
-    0x10  slin16 PCM  (mono, 8 kHz, 16-bit LE — despite the name "slin16"
-                        which is Asterisk-speak for signed-linear 16-bit,
-                        NOT 16 kHz. Wideband would need slin.wav mode.)
-    0xFF  error       (server → client, terminates call)
+    0x10  PCM audio   (mono, 16-bit LE signed linear; the sample rate is
+                        whatever the dialplan leg negotiated — the channel
+                        driver's c(slin16) option gives 16 kHz)
+    0xFF  error       (server -> client, terminates call)
 
-  Asterisk connects TO us (dialplan: AudioSocket(<uuid>,<host>:<port>)),
-  so we're a TCP server. Ptime is 20 ms → 320 bytes payload per audio frame
-  at 8 kHz mono s16le (8000 * 0.02 * 2 = 320).
+  Asterisk connects TO us (dialplan: Dial(AudioSocket/<host>:<port>/<uuid>/
+  c(slin16))), so we're a TCP server. Ptime is 20 ms -> 640 bytes payload
+  per audio frame at 16 kHz mono s16le (16000 * 0.02 * 2 = 640).
 
 We expose an asyncio protocol handler that produces (uuid, inbound_queue,
 outbound_queue) triples. The Pipecat pipeline consumes from `inbound_queue`
@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import struct
 import time
 from typing import Callable, Awaitable
@@ -37,16 +38,16 @@ TYPE_DTMF = 0x02
 TYPE_AUDIO = 0x10
 TYPE_ERROR = 0xFF
 
-# 8 kHz slin16 mono, 20 ms frames.
-SAMPLE_RATE = 8000
+# 16-bit LE mono PCM, 20 ms frames. Must match the codec the dialplan
+# forces on the AudioSocket leg (c(slin16) -> 16000).
+SAMPLE_RATE = int(os.getenv("AUDIOSOCKET_SAMPLE_RATE", "16000"))
 FRAME_MS = 20
-FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS // 1000  # 160
-FRAME_BYTES = FRAME_SAMPLES * 2  # 320
+FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS // 1000  # 320 @ 16 kHz
+FRAME_BYTES = FRAME_SAMPLES * 2  # 640 @ 16 kHz
 
 
 async def _read_msg(reader: asyncio.StreamReader) -> tuple[int, bytes] | None:
     """Read one framed message. Return (type, payload) or None on EOF."""
-    hdr = await reader.readexactly(3) if False else b""
     try:
         hdr = await reader.readexactly(3)
     except asyncio.IncompleteReadError:
