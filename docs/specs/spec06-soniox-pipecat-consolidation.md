@@ -3,7 +3,8 @@
 > Governed by `docs/runbooks/spec-rules.md`. A spec is a stable contract, not a
 > changelog. Daily progress belongs in `PLANS.md`.
 
-- **Status:** Draft
+- **Status:** Done (2026-07-10). All acceptance criteria met with live
+  evidence; see `docs/archive/plan/2026-07-10-spec06-soniox-pipecat-consolidation.md`.
 - **Owner:** operator
 - **Created:** 2026-07-10
 - **Supersedes:** `docs/specs/spec04-livekit-pipecat-fair-comparison.md`

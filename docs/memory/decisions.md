@@ -169,3 +169,31 @@ Superseded decisions stay here and point to their replacement.
   split. Re-evaluating LiveKit (or a speech-to-speech provider such as
   OpenAI Realtime) requires web/mobile WebRTC clients or scale needs that
   AudioSocket cannot serve.
+
+## DEC-011 - AudioSocket wideband framing and streaming-STT interim frames need explicit handling
+
+- **Decision:** (a) `chan_audiosocket`'s audio message type byte encodes
+  the sample rate, not just "audio present": 0x10 is 8 kHz slin, 0x12 is
+  16 kHz slin16, per `include/asterisk/res_audiosocket.h`. Any non-8 kHz
+  AudioSocket transport must send and expect the rate-matched KIND byte
+  (`vms/asterisk/services/pipecat/agent/audiosocket.py`'s
+  `AUDIO_KIND_BY_RATE` table), not the old hardcoded 0x10. (b) In a
+  Pipecat pipeline using a streaming STT service (Soniox), both the final
+  `TranscriptionFrame` and the per-word `InterimTranscriptionFrame`
+  subclass `TextFrame`. Any processor with a generic `isinstance(frame,
+  TextFrame)` branch (used to catch LLM/TTS text) must explicitly exclude
+  transcription frame types, or it will treat the caller's own in-progress
+  words as bot speech.
+- **Reason:** Both were discovered the same session moving the Pipecat
+  lane to 16 kHz + Soniox streaming (spec06). (a) silently corrupted
+  audio: Asterisk read 16 kHz frames as 8 kHz with the old KIND byte, so
+  the call proceeded but audio was garbled/wrong-speed with no error.
+  (b) silently broke functionality: `BotEchoFilter`'s recent-bot-text set
+  got poisoned with the caller's own interim words, so every subsequent
+  real user turn matched as an "echo" and was dropped - the agent
+  appeared to work but never heard the caller again after turn one.
+- **Impact:** Any future AudioSocket sample-rate change must update the
+  KIND byte alongside `AUDIOSOCKET_SAMPLE_RATE`. Any future FrameProcessor
+  added to a pipeline with a streaming STT service must check for
+  `TranscriptionFrame`/`InterimTranscriptionFrame` explicitly before a
+  broad `TextFrame` match, not assume `TextFrame` means "assistant text".

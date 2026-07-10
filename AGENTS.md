@@ -60,7 +60,7 @@ contracts define supported behavior and required evidence.
 | `.githooks/` | Repo-managed git hooks (identity + ASCII + spec-boundary checks). |
 | `.github/` | GitHub Actions workflows. |
 | `vms/asterisk/` | Asterisk VM source of truth: `etc/asterisk/*.tmpl` config files, `lib/systemd/system/*.service` units (`asterisk.service`, `transcriber.service`, `voicebot-dashboard.service`). |
-| `vms/asterisk/services/` | Voicebot lanes and test harness: `livekit/`, `pipecat/`, `common/` (shared model/cost/usage/trace code), `test-caller/`, `dashboard/` (read-only observability dashboard, spec02). |
+| `vms/asterisk/services/` | Voicebot lane and test harness: `pipecat/` (single lane, Soniox streaming STT/TTS), `common/` (shared model/cost/usage/trace code), `test-caller/`, `dashboard/` (read-only observability dashboard, spec02). |
 | `vms/sbc/` | OpenSIPS + rtpengine source of truth: `etc/opensips/opensips.cfg.tmpl`, `etc/rtpengine/rtpengine.conf.tmpl`, `install.sh`, `verify.sh`. |
 | `vms/monitoring/` | Zabbix + Grafana source of truth: `install.sh`, `verify.sh`, `setup-zabbix-agent.sh`, `verify-agent.sh`, metric collectors, dashboard provisioning. |
 | `infra/scripts/` | Repo-owned host/VM scripts: `lib/env.sh` (shared lab-env loader), `setup-transcriber.sh`, `verify.sh` (Asterisk VM smoke check), `watcher.py`, `transcribe.py`, `requirements.txt`. |
@@ -147,10 +147,9 @@ Rules:
   `/etc/zabbix` and Grafana provisioning state. Never hand-edit a rendered
   file on a VM: re-running the matching installer will overwrite it.
 - Installers are idempotent. Root `install.sh`, `vms/sbc/install.sh`,
-  `vms/monitoring/install.sh`, the voicebot lane installers under
-  `vms/asterisk/services/{livekit,pipecat}/`, and
-  `vms/asterisk/services/dashboard/install.sh` must be safe to re-run on an
-  already-configured box.
+  `vms/monitoring/install.sh`, `vms/asterisk/services/pipecat/install.sh`,
+  and `vms/asterisk/services/dashboard/install.sh` must be safe to re-run
+  on an already-configured box.
 - Deploy payloads live under `/opt/asterisk-lab/current` on each VM. That
   directory is disposable rsync output, not a source repository.
 - Secrets and per-host values live in `/etc/asterisk-lab/env` on VMs.
@@ -168,9 +167,12 @@ Rules:
   direction-aware so Asterisk-generated INVITEs (`Dial(PJSIP/<ext>)`
   B2BUA legs) fall through to their R-URI instead of being looped back
   to Asterisk (see DEC-005).
-- Voicebot lanes (LiveKit, Pipecat) are comparison surfaces. Parity must
-  be proven with fresh runtime evidence before a lane is treated as stable;
-  shared model/cost policy lives under `vms/asterisk/services/common/`.
+- The Pipecat voicebot lane (Soniox streaming STT/TTS, OpenAI LLM) is the
+  single lane (see DEC-010; the former LiveKit lane and two-lane
+  comparison mission are retired). Turn-end is owned by Soniox semantic
+  endpoint detection, never by VAD silence thresholds; VAD is limited to
+  the barge-in reflex. Shared model/cost policy lives under
+  `vms/asterisk/services/common/`.
 - The observability dashboard (`vms/asterisk/services/dashboard/`, spec02)
   is a read-only consumer of `/var/lib/voicebot/*.jsonl` and
   `/var/spool/asterisk/monitor/`. It never writes to those sinks and never
