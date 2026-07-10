@@ -106,20 +106,7 @@ deploy-agent-sbc: ## rsync SBC payload to $(SBC_VM), then install zabbix-agent2 
 	$(SSH) $(SBC_VM) '$(REMOTE_STAMP)'
 	$(SSH) $(SBC_VM) 'cd $(DEPLOY_DIR) && sudo ASTERISK_LAB_ENV=$(LAB_ENV) ./vms/monitoring/setup-zabbix-agent.sh'
 
-# ---- Voicebot stacks (LiveKit / Pipecat) — run on the Asterisk VM --------
-
-install-voicebot-livekit: ## Provision the LiveKit voicebot stack on this host
-	sudo -E ./vms/asterisk/services/livekit/install.sh
-
-deploy-voicebot-livekit: ## rsync Asterisk payload to $(VM), then provision LiveKit stack there
-	$(SSH) $(VM) '$(REMOTE_PREP)'
-	$(RSYNC_TO_VM) --filter='merge infra/deploy/asterisk.filter' ./ $(VM):$(DEPLOY_DIR)/
-	$(SSH) $(VM) '$(REMOTE_ENV_MIGRATE)'
-	$(SSH) $(VM) '$(REMOTE_STAMP)'
-	$(SSH) $(VM) 'cd $(DEPLOY_DIR) && sudo ASTERISK_LAB_ENV=$(LAB_ENV) VOICEBOT_REPO_REVISION="$$(cat .deploy-revision 2>/dev/null || echo unknown)" ./vms/asterisk/services/livekit/install.sh'
-
-logs-voicebot-livekit: ## Tail LiveKit stack container logs on $(VM)
-	$(SSH) $(VM) 'sudo docker logs -f --tail=100 lk-agent lk-sip lk-server 2>&1'
+# ---- Voicebot stack (Pipecat) — runs on the Asterisk VM ------------------
 
 install-voicebot-pipecat: ## Provision the Pipecat voicebot stack on this host
 	sudo -E ./vms/asterisk/services/pipecat/install.sh

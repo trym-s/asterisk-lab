@@ -9,9 +9,8 @@
 # restart baresip. Verify with `ss -ltnp | grep 4444`.
 #
 # Usage:
-#   ./run-suite.sh 1099             # LiveKit lane
-#   ./run-suite.sh 1098             # Pipecat lane (once it exists)
-#   TARGET=1099 SETTLE=5 ./run-suite.sh
+#   ./run-suite.sh                  # Pipecat lane (ext 1098)
+#   TARGET=1098 SETTLE=5 ./run-suite.sh
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,13 +28,14 @@ find_repo_root() {
 }
 REPO_ROOT="$(find_repo_root "$HERE")"
 
-TARGET="${1:-${TARGET:-1099}}"
+TARGET="${1:-${TARGET:-1098}}"
 CTRL_HOST="${CTRL_HOST:-127.0.0.1}"
 CTRL_PORT="${CTRL_PORT:-4444}"
 # Seconds to wait AFTER the WAV ends before hanging up — long enough for the
-# agent to run STT → LLM → TTS AND finish speaking. Empirically 8s clips
-# multi-sentence replies mid-word; 15s covers a ~40-word Turkish response
-# (VAD close + Whisper ~1s + GPT ~1s + TTS ~10s at tts-1 speeds).
+# agent to answer AND finish speaking. With the streaming Soniox pipeline the
+# reply starts ~1s after the utterance ends; 15s still bounds a long
+# multi-sentence spoken reply. Lower it once live evidence shows the real
+# per-turn ceiling.
 SETTLE="${SETTLE:-15}"
 # Seconds between /dial firing and the WAV being made the audio source.
 # Without this, ausrc is set and dial fires while the bot's greeting is still
@@ -133,17 +133,12 @@ for conv_id in "${conv_ids[@]}"; do
     send_cmd ausrc "aufile,$wav"
     sleep "$dur_int"
 
-    # baresip's aufile ausrc stops emitting RTP at EOF rather than looping,
-    # so leaving it dangling here goes fully silent (zero packets) for the
-    # whole SETTLE window. LiveKit's SIP gateway enforces a ~15s RTP
-    # media-inactivity watchdog and kills the call as dead if it sees that -
-    # unrelated to conversation content, but exactly what a SETTLE >= 15s
-    # gap triggers. Re-arm the (2s) silence primer every second so the RTP
-    # stream never actually goes dead while the agent replies.
-    for ((settle_s = 0; settle_s < SETTLE; settle_s++)); do
-      send_cmd ausrc "aufile,$SILENCE"
-      sleep 1
-    done
+    # Park the source back on the silence primer while the agent replies.
+    # (The old LiveKit SIP gateway needed this re-armed every second to
+    # defeat its RTP-inactivity watchdog; AudioSocket has no such watchdog,
+    # so a single re-arm plus a plain wait is enough.)
+    send_cmd ausrc "aufile,$SILENCE"
+    sleep "$SETTLE"
   done
 
   send_cmd hangup ""
@@ -157,11 +152,11 @@ python3 "$REPO_ROOT/vms/asterisk/services/common/usage_summary.py" \
   --log "$HOME/.local/state/voicebot/usage.jsonl" --since 1h 2>&1 || true
 
 echo
-echo "==> remote usage delta (LiveKit / Pipecat agent lanes)"
+echo "==> remote usage delta (Pipecat agent lane)"
 ssh deb@192.168.122.247 \
   "python3 /opt/asterisk-lab/current/vms/asterisk/services/common/usage_summary.py --since 5m" 2>&1 || \
   echo "  (couldn't reach VM — run manually: make usage-summary)"
 
 echo
 echo "done. VM-side agent logs since suite:"
-echo "  ssh deb@192.168.122.247 'sudo docker logs lk-agent --since 5m | grep -E \"user=|agent=|joined room\"'"
+echo "  ssh deb@192.168.122.247 'sudo docker logs pc-agent --since 5m'"

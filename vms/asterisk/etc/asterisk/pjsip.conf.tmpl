@@ -8,36 +8,4 @@ type=transport
 protocol=udp
 bind=0.0.0.0:5060
 
-; ---- LiveKit voicebot trunk -----------------------------------------
-; Static peer to the LiveKit SIP gateway running on the same VM
-; (services/livekit/docker-compose.yml exposes 127.0.0.1:5062). No auth:
-; loopback-only, and the SIP GW accepts INVITEs based on the inbound
-; trunk rule provisioned in services/livekit/install.sh.
-;
-; Codec order matters for the STT quality comparison: Opus and G.722 are
-; wideband (16 kHz+); ulaw is narrowband fallback. The LiveKit SIP GW
-; negotiates the first mutually supported codec, so Opus wins when the
-; caller offers it.
-
-[livekit-trunk]
-type=endpoint
-context=voicebot-outbound
-transport=transport-udp
-disallow=all
-allow=opus,g722,ulaw
-aors=livekit-trunk
-direct_media=no
-rtp_symmetric=yes
-force_rport=yes
-rewrite_contact=yes
-
-[livekit-trunk]
-type=aor
-contact=sip:livekit@127.0.0.1:5062
-
-[livekit-trunk]
-type=identify
-endpoint=livekit-trunk
-match=127.0.0.1
-
 #include "pjsip.d/*.conf"

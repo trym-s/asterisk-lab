@@ -1,11 +1,10 @@
-# Pipecat voicebot stack — runs on the Asterisk VM alongside Asterisk itself
-# and the LiveKit lane. Host network mode so the AudioSocket TCP listener at
-# port 8090 is reachable from Asterisk dialplan (127.0.0.1:8090). No SFU,
-# no SIP GW — Asterisk's app_audiosocket connects directly.
+# Pipecat voicebot stack — runs on the Asterisk VM alongside Asterisk itself.
+# Host network mode so the AudioSocket TCP listener at port 8090 is
+# reachable from the Asterisk dialplan (127.0.0.1:8090). No SFU, no SIP GW —
+# Asterisk's AudioSocket channel connects directly.
 #
-# Same /var/lib/voicebot mount + same services/common mount as the LK lane
-# so usage.jsonl and turns.jsonl are shared. tail_turns.py renders both
-# lanes from one code path.
+# Mounts /var/lib/voicebot plus services/common so usage.jsonl and
+# turns.jsonl share one code path with the other tooling.
 
 name: voicebot-pipecat
 

@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # Provision the Pipecat voicebot stack on the Asterisk VM.
-# Mirrors services/livekit/install.sh in shape so the two lanes deploy
-# identically apart from what they run.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -1,8 +1,8 @@
 # Test caller
 
-Play pre-baked utterances into an active call so the voicebot lanes
-(LiveKit ext 1099, Pipecat ext 1098 later) can be compared on identical
-user input without a human at the mic.
+Play pre-baked utterances into an active call so the voicebot lane
+(Pipecat, ext 1098) can be exercised with identical user input without a
+human at the mic.
 
 ## Generate WAVs
 
@@ -24,16 +24,15 @@ Assuming baresip is already registered as 1001 on the host:
 #    put `aufile` on its own line in ~/.baresip/config under `module`.
 # 2. start a call and switch audio source to file:
 baresip -e '/aufile services/test-caller/audio/01-greeting.wav' \
-        -e '/dial 1099'
+        -e '/dial 1098'
 ```
 
 Or interactively inside a running baresip:
 ```
 /aufile /path/to/services/test-caller/audio/01-greeting.wav
-/dial 1099
+/dial 1098
 ```
 
-Full automation (baresip container + scenario script) is a follow-up —
-see `../pipecat/README.md` when that lane lands, we'll wire a single
-`make bench` there that fires every utterance at both extensions in
-sequence and records replies.
+Full automation lives in `run-suite.sh`: it drives the running baresip
+via ctrl_tcp and plays every conversation's turns at ext 1098 in
+sequence.
