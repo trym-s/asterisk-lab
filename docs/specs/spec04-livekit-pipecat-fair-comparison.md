@@ -3,7 +3,10 @@
 > Governed by `docs/runbooks/spec-rules.md`. A spec is a stable contract, not a
 > changelog. Daily progress belongs in `PLANS.md`.
 
-- **Status:** Draft
+- **Status:** Superseded by `docs/specs/spec06-soniox-pipecat-consolidation.md`
+  (2026-07-10: the LiveKit lane is retired and Pipecat becomes the single
+  lane, so the two-lane fairness comparison mission ends; the live-evidence
+  acceptance criterion closes as superseded, not satisfied)
 - **Owner:** operator
 - **Created:** 2026-07-07
 

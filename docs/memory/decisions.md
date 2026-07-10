@@ -143,3 +143,29 @@ Superseded decisions stay here and point to their replacement.
 - **Impact:** Future trace readers and correlation code must normalize
   AudioSocket UUID formatting before comparing values. Do not assume the
   hyphenated display form is the only serialized form in `events.jsonl`.
+
+## DEC-010 - LiveKit lane retired; Pipecat is the single lane on Soniox streaming
+
+- **Decision:** The LiveKit voicebot lane is removed (repo and VM). Pipecat
+  is the single maintained lane, using Soniox streaming STT
+  (SonioxSTTService, stt-rt-v5) and streaming TTS (SonioxTTSService) with
+  the LLM kept as a swappable OpenAI chat service. The audio path is
+  16 kHz end to end via chan_audiosocket (Dial form, slin16). Turn-end is
+  owned by Soniox semantic endpoint detection (the final "<end>" token);
+  Silero VAD is kept only as the barge-in trigger.
+- **Reason:** In a SIP-only lab the LiveKit WebRTC stack (SIP gateway,
+  SFU, Redis, agent worker) is pure operational surface: its SIP gateway's
+  hardcoded ~15 s RTP-inactivity watchdog forced a keepalive hack into the
+  test suite, an Opus/G.722 wideband attempt deadlocked on ICE/STUN, and
+  the stack sat down on the VM for two days unnoticed. The batch
+  whisper-1/tts-1 pipeline caused 10+ s turn latency, and VAD
+  silence-threshold endpointing cut callers off mid-sentence. Streaming
+  STT/TTS plus semantic endpointing removes those failure classes;
+  single-hop AudioSocket removes the codec-negotiation and ICE surface.
+- **Impact:** No new lane or framework is added without a fresh decision.
+  The comparison mission (spec04 surface) is closed as superseded;
+  dashboard comparison panels must degrade gracefully with one live lane.
+  Turn-taking changes must preserve the endpointing-vs-barge-in ownership
+  split. Re-evaluating LiveKit (or a speech-to-speech provider such as
+  OpenAI Realtime) requires web/mobile WebRTC clients or scale needs that
+  AudioSocket cannot serve.
