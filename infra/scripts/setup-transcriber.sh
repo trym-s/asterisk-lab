@@ -10,6 +10,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=/dev/null
+. "$REPO_ROOT/infra/scripts/lib/env.sh"
 APPDIR=/opt/transcriber
 VENV=$APPDIR/venv
 # `base` is the watcher.py default and hallucinates on 8 kHz telephony audio;
@@ -51,12 +53,14 @@ echo "==> venv at $VENV (openai-whisper)"
 # Point pip's temp/cache at /var/tmp on the real disk.
 $SUDO install -d -m 1777 /var/tmp/pip-build /var/tmp/pip-cache
 PIP_ENV=(env TMPDIR=/var/tmp PIP_CACHE_DIR=/var/tmp/pip-cache)
-$SUDO "${PIP_ENV[@]}" "$VENV/bin/pip" install --upgrade pip
-$SUDO "${PIP_ENV[@]}" "$VENV/bin/pip" install -r "$REPO_ROOT/infra/scripts/requirements.txt"
+# shellcheck disable=SC2086 # $SUDO is intentionally unquoted (empty or "sudo")
+retry $SUDO "${PIP_ENV[@]}" "$VENV/bin/pip" install --upgrade pip
+# shellcheck disable=SC2086
+retry $SUDO "${PIP_ENV[@]}" "$VENV/bin/pip" install -r "$REPO_ROOT/infra/scripts/requirements.txt"
 
 echo "==> pre-download whisper model '$MODEL' into asterisk's cache"
 $SUDO install -d -o asterisk -g asterisk -m 0755 /var/lib/asterisk/.cache
-as_user asterisk env HOME=/var/lib/asterisk XDG_CACHE_HOME=/var/lib/asterisk/.cache \
+retry as_user asterisk env HOME=/var/lib/asterisk XDG_CACHE_HOME=/var/lib/asterisk/.cache \
   "$VENV/bin/python" -c "import whisper; whisper.load_model('$MODEL')"
 
 echo "==> systemd unit"

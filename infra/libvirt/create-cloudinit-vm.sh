@@ -67,9 +67,32 @@ hostname: $DOMAIN
 manage_etc_hosts: true
 ssh_pwauth: false
 disable_root: true
+# libvirt's default NAT network advertises just enough IPv6 (link-local +
+# a router advertisement) for the kernel to prefer AAAA records without
+# actually routing IPv6 out - external HTTPS/git connections then hang or
+# get reset. Disable IPv6 outright, in bootcmd (before apt-get update / any
+# package install below runs) and persisted to survive reboots.
+bootcmd:
+  - [ sh, -c, "printf 'net.ipv6.conf.all.disable_ipv6 = 1\nnet.ipv6.conf.default.disable_ipv6 = 1\nnet.ipv6.conf.lo.disable_ipv6 = 1\n' > /etc/sysctl.d/99-disable-ipv6.conf" ]
+  - [ sysctl, --system ]
 package_update: true
 packages:
   - rsync
+  - ethtool
+write_files:
+  # virtio-net + libvirt NAT (worse under nested virtualization, e.g. a
+  # libvirt host running inside WSL2) has a known checksum/segmentation
+  # offload bug: larger TCP segments (a TLS ClientHello offering HTTP/2
+  # ALPN is a common trigger - curl/git hang after sending it, no RST, no
+  # retransmit that lands) get silently dropped. Small requests and most
+  # apt transfers are unaffected, so this can look like a random flaky
+  # host rather than every VM on this network. The udev rule below
+  # reapplies the fix to any virtio_net interface on every add event
+  # (boot, hot-plug); runcmd below covers the current boot's interface,
+  # which already exists by the time write_files/udev would see it.
+  - path: /etc/udev/rules.d/70-disable-virtio-offload.rules
+    content: |
+      SUBSYSTEM=="net", ACTION=="add", DRIVERS=="virtio_net", RUN+="/usr/sbin/ethtool -K \$env{INTERFACE} tso off gso off gro off tx off"
 users:
   - default
   - name: $VM_USER
@@ -81,6 +104,7 @@ users:
     ssh_authorized_keys:
       - $pubkey
 runcmd:
+  - [ sh, -c, "iface=\$(ip -o link show up | awk -F': ' '\$2!=\"lo\"{print \$2; exit}'); [ -n \"\$iface\" ] && ethtool -K \"\$iface\" tso off gso off gro off tx off || true" ]
   - systemctl enable --now ssh || systemctl enable --now sshd || true
 EOF
 

@@ -27,7 +27,7 @@ $SUDO install -d -o root -g root -m 0755 /var/lib/voicebot
 
 echo "==> uv (Python package manager)"
 if [ ! -x "$UV_BIN" ]; then
-  curl -LsSf https://astral.sh/uv/install.sh | $SUDO env UV_INSTALL_DIR=/usr/local/bin sh
+  retry sh -c "curl -LsSf https://astral.sh/uv/install.sh | $SUDO env UV_INSTALL_DIR=/usr/local/bin sh"
 else
   echo "    uv present: $("$UV_BIN" --version)"
 fi

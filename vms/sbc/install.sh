@@ -41,7 +41,8 @@ EXPECTED_LIST_LINE="deb [signed-by=${KEYRING}] https://apt.opensips.org ${CODENA
 if [ ! -s "$KEYRING" ]; then
   echo "==> apt.opensips.org signing key"
   $SUDO install -d -m 0755 /usr/share/keyrings
-  $SUDO curl -fsSL https://apt.opensips.org/opensips-org.gpg -o "$KEYRING"
+  # shellcheck disable=SC2086 # $SUDO is intentionally unquoted (empty or "sudo")
+  retry $SUDO curl -fsSL https://apt.opensips.org/opensips-org.gpg -o "$KEYRING"
 fi
 
 if [ ! -f "$LIST" ] || ! grep -qxF "$EXPECTED_LIST_LINE" "$LIST"; then

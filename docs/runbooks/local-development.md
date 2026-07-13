@@ -11,13 +11,22 @@ git clone <this-repo> asterisk-lab
 cd asterisk-lab
 git config core.hooksPath .githooks
 
-# Bring up VMs via libvirt (optional but reproducible)
-./infra/libvirt/setup-host.sh
-./infra/libvirt/create-cloudinit-vm.sh
+# Bring up all three VMs via libvirt in one shot (optional but reproducible):
+# host bootstrap + Asterisk + SBC + monitoring VMs, then an SSH-reachability
+# table. Idempotent - safe to re-run any time.
+sudo ./infra/libvirt/create-lab-vms.sh
+# or: make lab-provision
 
 # Read the current DHCP leases and populate /etc/asterisk-lab/env on each VM
 virsh -c qemu:///system net-dhcp-leases default
 ```
+
+To bring up a single VM by hand instead (e.g. just Asterisk), run
+`infra/libvirt/setup-host.sh` once and then
+`infra/libvirt/create-cloudinit-vm.sh` directly - see the "Host-side:
+running the VM under libvirt" section of `README.md` for the per-VM
+sizing variables (`DOMAIN`, `MEMORY_GIB`, `VCPUS`, `DISK_SIZE`) that
+`create-lab-vms.sh` wraps.
 
 ## Daily loop
 

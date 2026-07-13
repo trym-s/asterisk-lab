@@ -145,10 +145,18 @@ usage-summary: ## Print API spend summary from /var/lib/voicebot/usage.jsonl on 
 
 # ---- VM Management (virsh) targets ----------------------------------------
 
-.PHONY: vms ips up-ast down-ast up-sbc down-sbc up-mon down-mon vms-up vms_up vms-down vms_down
+.PHONY: vms ips up-ast down-ast up-sbc down-sbc up-mon down-mon vms-up vms_up vms-down vms_down lab-provision
 
-vms: ## List all local libvirt VMs
-	$(VIRSH) list --all
+lab-provision: ## Create (or start) and SSH-check all three lab VMs from scratch (idempotent)
+	sudo ./infra/libvirt/create-lab-vms.sh
+
+vms: ## List all local libvirt VMs with state and DHCP-lease IP
+	@$(VIRSH) list --all --name | while read -r dom; do \
+		[ -n "$$dom" ] || continue; \
+		state=$$($(VIRSH) domstate "$$dom" 2>/dev/null); \
+		ip=$$($(VIRSH) domifaddr "$$dom" --source lease 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1); \
+		printf '%-32s %-12s %s\n' "$$dom" "$$state" "$${ip:-<no lease>}"; \
+	done
 
 ips: ## Show DHCP leases (active VM IPs)
 	$(VIRSH) net-dhcp-leases default

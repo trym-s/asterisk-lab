@@ -58,7 +58,7 @@ ZABBIX_RELEASE="zabbix-release_latest_${ZABBIX_VERSION}+debian${ZABBIX_DEBIAN_MA
 ZABBIX_RELEASE_URL="https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/debian/pool/main/z/zabbix-release/${ZABBIX_RELEASE}"
 if [ ! -f /etc/apt/sources.list.d/zabbix.list ] || ! grep -q "repo.zabbix.com/zabbix/${ZABBIX_VERSION}" /etc/apt/sources.list.d/zabbix.list; then
   tmp_deb="/tmp/${ZABBIX_RELEASE}"
-  curl -fsSL "$ZABBIX_RELEASE_URL" -o "$tmp_deb"
+  retry curl -fsSL "$ZABBIX_RELEASE_URL" -o "$tmp_deb"
   $SUDO dpkg -i "$tmp_deb"
   $SUDO apt-get update -qq
 fi
@@ -66,7 +66,8 @@ fi
 echo "==> Grafana apt repository"
 $SUDO install -d -m 0755 /etc/apt/keyrings
 if [ ! -s /etc/apt/keyrings/grafana.asc ]; then
-  $SUDO wget -q -O /etc/apt/keyrings/grafana.asc https://apt.grafana.com/gpg-full.key
+  # shellcheck disable=SC2086 # $SUDO is intentionally unquoted (empty or "sudo")
+  retry $SUDO wget -q -O /etc/apt/keyrings/grafana.asc https://apt.grafana.com/gpg-full.key
   $SUDO chmod 0644 /etc/apt/keyrings/grafana.asc
 fi
 GRAFANA_LIST=/etc/apt/sources.list.d/grafana.list
@@ -123,6 +124,14 @@ ZABBIX_DB_PASSWORD="$ZABBIX_DB_PASSWORD" \
 $SUDO chown www-data:www-data /etc/zabbix/web/zabbix.conf.php
 $SUDO chmod 0640 /etc/zabbix/web/zabbix.conf.php
 
+# zabbix-apache-conf's postinst only installs /etc/apache2/conf-enabled/zabbix.conf;
+# it does not reload apache2 itself. provision-observability.py below needs the
+# /zabbix alias (and this freshly rendered zabbix.conf.php) live, so restart here
+# rather than waiting for the "enable + restart services" block at the end of
+# this script - otherwise the API call 404s against a stale vhost config.
+$SUDO systemctl enable apache2 >/dev/null 2>&1 || true
+$SUDO systemctl restart apache2
+
 echo "==> Zabbix lab hosts + items"
 SBC_IP="${SBC_IP:-192.168.122.3}" \
   ASTERISK_IP="${ASTERISK_IP:-192.168.122.247}" \
@@ -137,7 +146,7 @@ echo "==> Grafana Zabbix plugin"
 GRAFANA_CLI=/usr/sbin/grafana-cli
 GRAFANA_HOME=/usr/share/grafana
 if ! "$GRAFANA_CLI" --homepath "$GRAFANA_HOME" plugins ls 2>/dev/null | grep -q '^alexanderzobnin-zabbix-app '; then
-  $SUDO "$GRAFANA_CLI" --homepath "$GRAFANA_HOME" plugins install alexanderzobnin-zabbix-app
+  retry $SUDO "$GRAFANA_CLI" --homepath "$GRAFANA_HOME" plugins install alexanderzobnin-zabbix-app
 fi
 
 echo "==> Grafana datasource + dashboard provisioning"

@@ -29,7 +29,7 @@ ZABBIX_RELEASE="zabbix-release_latest_${ZABBIX_VERSION}+debian${ZABBIX_DEBIAN_MA
 ZABBIX_RELEASE_URL="https://repo.zabbix.com/zabbix/${ZABBIX_VERSION}/debian/pool/main/z/zabbix-release/${ZABBIX_RELEASE}"
 if [ ! -f /etc/apt/sources.list.d/zabbix.list ] || ! grep -q "repo.zabbix.com/zabbix/${ZABBIX_VERSION}" /etc/apt/sources.list.d/zabbix.list; then
   tmp_deb="/tmp/${ZABBIX_RELEASE}"
-  curl -fsSL "$ZABBIX_RELEASE_URL" -o "$tmp_deb"
+  retry curl -fsSL "$ZABBIX_RELEASE_URL" -o "$tmp_deb"
   $SUDO dpkg -i "$tmp_deb"
   $SUDO apt-get update -qq
 fi

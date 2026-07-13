@@ -54,8 +54,52 @@ The host bootstrap script does **not** install packages. Install these on the ho
 | `virt-install`    | `virt-install`        | `virtinst`                                     | `virt-install`                   |
 | `cloud-localds`   | `cloud-image-utils`   | `cloud-image-utils`                            | `cloud-utils` / `cloud-utils-growpart` |
 | `curl`            | `curl`                | `curl`                                         | `curl`                           |
+| `shellcheck`      | `shellcheck`          | `shellcheck`                                   | `ShellCheck`                     |
 
 In addition, the host kernel must have the `sch_htb` traffic-control module available (`/lib/modules/$(uname -r)/kernel/net/sched/sch_htb.ko*`). Standard kernels ship it; the bootstrap script loads it.
+
+`shellcheck` is not required to boot VMs; it lints every shell script this repo ships (`.github/workflows/lint.yml` runs it in CI) and is a "Done criteria" gate in `AGENTS.md` for any shell script change — install it on the host if you plan to edit `.sh` files.
+
+### One-shot: create and check all three VMs
+
+`infra/libvirt/create-lab-vms.sh` runs the host bootstrap once, then creates
+(or starts, if they already exist) the Asterisk, SBC, and monitoring VMs in
+sequence, then prints a DHCP-lease-IP + SSH-reachability table for all
+three. It is idempotent — re-run any time to bring the lab back up or to
+pick up VMs that were already provisioned.
+
+```bash
+sudo ./infra/libvirt/create-lab-vms.sh
+# or via Makefile:
+make lab-provision
+```
+
+```text
+==> host bootstrap (libvirt, KVM, default network/pool)
+==> creating/starting asterisk-deb13-cloudinit (4 GiB / 4 vcpu / 30G)
+==> creating/starting opensips-sbc-deb13-cloudinit (2 GiB / 2 vcpu / 20G)
+==> creating/starting monitoring-deb13-cloudinit (4 GiB / 2 vcpu / 40G)
+==> waiting for DHCP leases and checking SSH reachability
+
+DOMAIN                           IP               SSH
+asterisk-deb13-cloudinit         192.168.122.32   OK
+opensips-sbc-deb13-cloudinit     192.168.122.34   OK
+monitoring-deb13-cloudinit       192.168.122.4x   OK
+```
+
+Override per-VM sizing with `ASTERISK_MEMORY_GIB`, `SBC_MEMORY_GIB`,
+`MONITORING_MEMORY_GIB` (and the matching `*_VCPUS` / `*_DISK_SIZE` vars) or
+the VM's SSH pubkey with `SSH_PUBKEY_FILE` (defaults to the invoking user's
+`~/.ssh/id_ed25519.pub` — sudo resets `$HOME`, so the script resolves it via
+`$SUDO_USER` automatically).
+
+This script only creates the VMs and confirms SSH reachability. It does not
+place `/etc/asterisk-lab/env` (secrets are deliberately never automated —
+see "Adding the OpenSIPS SBC layer" and "Adding the monitoring VM" below)
+and does not run `make install`/`make deploy`/`make verify`; do those next,
+per VM, as described in the rest of this README.
+
+### Bring up a single VM by hand
 
 ### Option A: reproducible SSH-ready VM with cloud-init
 

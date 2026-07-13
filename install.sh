@@ -40,11 +40,29 @@ if [ -x /usr/sbin/asterisk ] && /usr/sbin/asterisk -V 2>/dev/null | grep -q "$AS
   echo "==> asterisk $ASTERISK_VERSION already installed; skipping build"
 else
   echo "==> building asterisk $ASTERISK_VERSION (slow — first run is ~10 min)"
-  [ -d "$SRC/.git" ] || $SUDO git clone https://github.com/asterisk/asterisk.git "$SRC"
-  $SUDO git -C "$SRC" fetch --all --tags
+  # shellcheck disable=SC2086 # $SUDO is intentionally unquoted (empty or "sudo")
+  [ -d "$SRC/.git" ] || retry $SUDO git clone https://github.com/asterisk/asterisk.git "$SRC"
+  # shellcheck disable=SC2086
+  retry $SUDO git -C "$SRC" fetch --all --tags
   $SUDO git -C "$SRC" checkout "$ASTERISK_VERSION"
-  $SUDO "$SRC/contrib/scripts/install_prereq" install
-  ( cd "$SRC" && $SUDO ./configure && $SUDO make -j"$MAKE_JOBS" && $SUDO make install && $SUDO make samples )
+  # Upstream install_prereq has a known rough edge: its internal
+  # check_installed_debs pipeline ends in `grep -vF :`, which exits 1 when
+  # every required package is already installed (nothing to invert-match),
+  # and install_prereq's own `set -e` treats that as fatal even though
+  # nothing actually went wrong. This reliably happens on a re-run (the
+  # idempotent case this installer must support) once all -dev packages
+  # are already present. Don't treat its exit code as authoritative -
+  # ./configure right below is the real test of whether prerequisites are
+  # satisfied and fails loudly and specifically if something is missing.
+  $SUDO "$SRC/contrib/scripts/install_prereq" install || true
+  # ./configure downloads the bundled pjproject tarball from
+  # raw.githubusercontent.com, and `make install`/`make samples` download
+  # sound/MOH archives from downloads.asterisk.org; on a flaky link these
+  # can time out or come back truncated even after their own single
+  # internal retry. retry each network-touching step (not `make -j` itself
+  # - a real compile failure should not be masked by blind retries).
+  # shellcheck disable=SC2086
+  ( cd "$SRC" && retry $SUDO ./configure && $SUDO make -j"$MAKE_JOBS" && retry $SUDO make install && retry $SUDO make samples )
 fi
 
 # ---- 3. system user + directory ownership ---------------------------

@@ -12,7 +12,7 @@ conversation + pipeline-pulse strip) and removes the retired LiveKit-era
 comparison surface. No implementation started.
 **Governing spec:** `docs/specs/spec07-voicebot-call-console.md`
 **Kickoff prompt:** `docs/prompts/spec07-voicebot-call-console.md`
-**Last updated:** 2026-07-10
+**Last updated:** 2026-07-13
 
 ## Active milestones
 
@@ -40,6 +40,14 @@ comparison surface. No implementation started.
 
 ## Recent updates
 
+- 2026-07-13 - Off-spec infra chore: brought up the full three-VM lab
+  (Asterisk, SBC, monitoring) from a bare host under WSL2 - installed
+  libvirt/qemu, fixed a missing +x bit on `infra/libvirt/setup-host.sh`,
+  raised the WSL2 `.wslconfig` memory/CPU ceiling so all three VMs fit, and
+  added `infra/libvirt/create-lab-vms.sh` (+ `make lab-provision`) as a
+  one-shot idempotent create-all-three-and-SSH-check script, documented in
+  `README.md` and `docs/runbooks/local-development.md`. Unrelated to
+  spec07; tracked here per the "small tasks skip specs" rule.
 - 2026-07-10 - Drafted spec07 (voicebot call console redesign) with the
   operator: chat-bubble layout, pulse detail level, no-replay finished-call
   mode, light Tabler theme, additive turns-API fields, 1 s console polling

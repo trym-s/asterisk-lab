@@ -197,3 +197,31 @@ Superseded decisions stay here and point to their replacement.
   added to a pipeline with a streaming STT service must check for
   `TranscriptionFrame`/`InterimTranscriptionFrame` explicitly before a
   broad `TextFrame` match, not assume `TextFrame` means "assistant text".
+
+## DEC-012 - libvirt default NAT VMs must disable IPv6 or outbound HTTPS/git randomly resets
+
+- **Decision:** Every VM created by `infra/libvirt/create-cloudinit-vm.sh`
+  disables IPv6 at first boot, in `bootcmd` (before `package_update`/
+  `packages` run), via a persisted `/etc/sysctl.d/99-disable-ipv6.conf`
+  plus an immediate `sysctl --system`.
+- **Reason:** libvirt's default NAT network gives VMs just enough IPv6
+  (a link-local address plus a router advertisement) for the kernel to
+  return and prefer AAAA records, but does not actually route IPv6
+  out - it is NAT44 only. Outbound HTTPS/git to any AAAA-advertising host
+  (`github.com`, `apt.opensips.org`, `repo.zabbix.com`, etc.) then hangs
+  or gets an active connection reset partway through, non-deterministically
+  (curl's `-4` flag or explicit IPv4-only `getent ahosts` calls proved the
+  IPv4 path always worked). This broke `install.sh`'s `git clone` of
+  Asterisk, `vms/sbc/install.sh`'s apt key fetch, and both
+  `vms/monitoring/install.sh` and `setup-zabbix-agent.sh`'s Zabbix repo
+  `.deb` fetch, each with a different symptom (`Connection reset by peer`
+  vs. a 10 s timeout) depending on how much IPv6 state the VM had
+  accumulated since boot.
+- **Impact:** Any new curl/git/apt call to an external host in an installer
+  must keep working on an IPv6-disabled VM (it already does - this is the
+  supported state, not an edge case). Bringing up VMs by hand instead of
+  through `create-cloudinit-vm.sh` (e.g. the "Option B: manual qcow2 VM"
+  README path) needs the same fix applied manually:
+  `printf 'net.ipv6.conf.all.disable_ipv6 = 1\nnet.ipv6.conf.default.disable_ipv6 = 1\n' | sudo tee /etc/sysctl.d/99-disable-ipv6.conf && sudo sysctl --system`.
+  Existing VMs provisioned before this fix need the same commands run once
+  by hand; they do not get `create-cloudinit-vm.sh` re-run automatically.
