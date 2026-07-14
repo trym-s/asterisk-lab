@@ -12,6 +12,12 @@ allow=opus,g722,ulaw,alaw
 auth=${SIP_EXT}
 aors=${SIP_EXT}
 direct_media=no
+; Softphones register from behind NAT (e.g. a host softphone reaching the VM
+; across a routed/NATed hop). Trust the packet source over SDP/Contact so
+; signaling replies and RTP flow back to where the traffic actually came from.
+rtp_symmetric=yes
+force_rport=yes
+rewrite_contact=yes
 
 [${SIP_EXT}]
 type=aor
