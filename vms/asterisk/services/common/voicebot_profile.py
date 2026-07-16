@@ -16,6 +16,10 @@ PRICING_VERSION = os.environ.get("VOICEBOT_PRICING_VERSION", "soniox-openai-2026
 
 @dataclass(frozen=True)
 class ModelProfile:
+    # Free-form label recorded alongside every run; it selects nothing. The
+    # actual models come from the stt_/llm_/tts_ fields below, so a name that
+    # implies a configuration ("...-telephony") is a claim this class cannot
+    # honour. Keep it descriptive of what is pinned, not of the audio source.
     name: str
     stt_provider: str
     stt_model: str
@@ -32,7 +36,7 @@ class ModelProfile:
 
 def load_model_profile() -> ModelProfile:
     return ModelProfile(
-        name=os.environ.get("VOICEBOT_MODEL_PROFILE", "soniox-streaming-telephony"),
+        name=os.environ.get("VOICEBOT_MODEL_PROFILE", "soniox-streaming"),
         stt_provider=os.environ.get("VOICEBOT_STT_PROVIDER", "soniox"),
         stt_model=os.environ.get("VOICEBOT_STT_MODEL", "stt-rt-v5"),
         llm_provider=os.environ.get("VOICEBOT_LLM_PROVIDER", "openai"),
