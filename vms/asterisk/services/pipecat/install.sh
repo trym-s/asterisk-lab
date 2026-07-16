@@ -43,17 +43,40 @@ $SUDO install -d -o root -g root -m 0755 /var/lib/voicebot
 if ! command -v docker >/dev/null 2>&1; then
   echo "==> installing docker"
   $SUDO apt-get update -qq
+  # Compose v2 ships under different names per distro: docker-compose-v2
+  # (Ubuntu, CLI plugin -> "docker compose"), or docker-compose (Debian
+  # trixie, Go-based v2 standalone -> "docker-compose"). Pick whichever the
+  # target's apt actually knows about; the invocation is detected below.
+  compose_pkg=""
+  for cand in docker-compose-plugin docker-compose-v2 docker-compose; do
+    if apt-cache show "$cand" >/dev/null 2>&1; then compose_pkg="$cand"; break; fi
+  done
+  if [ -z "$compose_pkg" ]; then
+    echo "ERROR: no Compose package (docker-compose-plugin/-v2/docker-compose) available" >&2
+    exit 1
+  fi
   DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y --no-install-recommends \
-    docker.io docker-compose-v2
+    docker.io "$compose_pkg"
   $SUDO systemctl enable --now docker
 else
   echo "==> docker present: $(docker --version)"
 fi
 
 # ---- 2. compose up -----------------------------------------------------
+# Resolve the Compose invocation: the v2 CLI plugin ("docker compose") when
+# present, else the standalone Go binary ("docker-compose", Debian trixie).
+if $SUDO docker compose version >/dev/null 2>&1; then
+  COMPOSE="$SUDO docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then
+  COMPOSE="$SUDO docker-compose"
+else
+  echo "ERROR: neither 'docker compose' nor 'docker-compose' is available" >&2
+  exit 1
+fi
+
 echo "==> starting Pipecat stack"
 cd "$HERE"
-$SUDO docker compose \
+$COMPOSE \
   --env-file "$LAB_ENV_FILE" \
   up -d --build
 
@@ -68,7 +91,7 @@ for _ in {1..30}; do
 done
 if [ "$ready" != "1" ]; then
   echo "ERROR: pc-agent is not listening on TCP 127.0.0.1:8090" >&2
-  $SUDO docker compose ps >&2 || true
+  $COMPOSE ps >&2 || true
   $SUDO docker logs pc-agent --tail=80 >&2 || true
   exit 1
 fi

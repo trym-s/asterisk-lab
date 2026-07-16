@@ -7,6 +7,10 @@ logs/
 .venv/
 venv/
 
+# Host-local baresip softphone state: carries SIP auth_pass values, a live
+# DHCP-allocated Asterisk IP, and per-host uuid/contact files. Never tracked.
+infra/baresip_config/
+
 # Python and tooling caches
 __pycache__/
 *.py[cod]
