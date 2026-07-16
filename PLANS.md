@@ -12,7 +12,7 @@ conversation + pipeline-pulse strip) and removes the retired LiveKit-era
 comparison surface. No implementation started.
 **Governing spec:** `docs/specs/spec07-voicebot-call-console.md`
 **Kickoff prompt:** `docs/prompts/spec07-voicebot-call-console.md`
-**Last updated:** 2026-07-13
+**Last updated:** 2026-07-16
 
 ## Active milestones
 
@@ -40,6 +40,37 @@ comparison surface. No implementation started.
 
 ## Recent updates
 
+- 2026-07-16 - Off-spec feature: connected a real DID on a remote FreePBX
+  (Sangoma FreePBX 17 / Asterisk 22.8.2, public) to the voicebot. The
+  Asterisk VM is behind three NAT layers (libvirt/WSL2/ISP) and
+  unreachable inbound, so it REGISTERS OUTBOUND to FreePBX as an ordinary
+  extension (1003); FreePBX's Inbound Route sends the DID down that
+  registration into a new `[from-freepbx]` -> `[voicebot]` dialplan path.
+  Commit `e871543`: `pjsip-trunk.conf.tmpl` (registration/endpoint/aor/auth,
+  `line=yes` for inbound matching, `qualify_frequency=30` + short
+  `expiration` to hold the NAT pinhole, back-off retries to dodge FreePBX
+  fail2ban), `pjsip.conf.tmpl` includes a separate `pjsip.trunks.d/`
+  (kept out of the `SIP_EXTENSIONS`-pruned, verify-scanned `pjsip.d/`),
+  `install.sh` renders when `FREEPBX_HOST` set / removes when unset,
+  `extensions.conf.tmpl` extracts the 1098 AudioSocket block into a shared
+  `[voicebot]` context, `verify.sh` gains trunk-conditional checks,
+  runbook `docs/runbooks/freepbx-trunk.md`. Tracked here per "small tasks
+  skip specs". Proven live: real inbound call, 4-turn Turkish conversation
+  end to end (greeting -> STT stt-rt-v5 -> gpt-4o-mini + doc lookup -> TTS
+  tts-rt-v1), two-way RTP confirmed via audiosocket counters (1903 inbound
+  / 1823 outbound frames), `make verify` 14/14. Findings worth carrying:
+  (1) FreePBX SIP port is 7201, not 5060 (scanner avoidance) -- do not
+  assume 5060. (2) Symmetric RTP latching alone carried audio both ways
+  behind double NAT; `external_media_address` deliberately NOT set and
+  confirmed unnecessary. (3) The DID's Sippy softswitch (Cloudcell's own,
+  195.14.104.23 upstream) OFFERS G722 in its INVITE, but the trunk pins
+  `allow=ulaw,alaw` so the call negotiated ulaw 8 kHz -- adding g722 to the
+  trunk endpoint MIGHT get wideband to STT (untested; caller was mobile so
+  the upstream leg may cap at 8 kHz anyway). (4) On the FreePBX box, a
+  root-owned `pjsip.auth.conf`/`agents.conf` silently blocked `Apply
+  Config` from writing new extension secrets (log: `Permission denied` /
+  `chown(): Operation not permitted`); fix is `fwconsole chown` +
+  `fwconsole reload`. All four are captured in the runbook.
 - 2026-07-13 - Off-spec infra chore: brought up the full three-VM lab
   (Asterisk, SBC, monitoring) from a bare host under WSL2 - installed
   libvirt/qemu, fixed a missing +x bit on `infra/libvirt/setup-host.sh`,

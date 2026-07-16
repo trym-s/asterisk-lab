@@ -225,3 +225,42 @@ Superseded decisions stay here and point to their replacement.
   `printf 'net.ipv6.conf.all.disable_ipv6 = 1\nnet.ipv6.conf.default.disable_ipv6 = 1\n' | sudo tee /etc/sysctl.d/99-disable-ipv6.conf && sudo sysctl --system`.
   Existing VMs provisioned before this fix need the same commands run once
   by hand; they do not get `create-cloudinit-vm.sh` re-run automatically.
+
+## DEC-013 - Remote FreePBX DID reaches the voicebot via outbound registration, not a peer trunk
+
+- **Decision:** To bring a real DID terminating on a remote FreePBX to the
+  lab voicebot, the Asterisk VM registers OUTBOUND to FreePBX as an
+  ordinary extension (`FREEPBX_*` env gates a trunk rendered from
+  `vms/asterisk/etc/asterisk/pjsip-trunk.conf.tmpl` into
+  `/etc/asterisk/pjsip.trunks.d/freepbx.conf`). FreePBX's Inbound Route
+  sends the DID down that registration; inbound INVITEs land in a shared
+  `[voicebot]` dialplan context via `[from-freepbx]`. The registration uses
+  `line=yes`/`endpoint=` for inbound matching, `qualify_frequency=30` plus
+  a short `expiration` to hold the NAT pinhole, and back-off retry settings
+  so a bad password does not trip FreePBX fail2ban. Trunk config lives in a
+  separate `pjsip.trunks.d/` dir, never `pjsip.d/` (which `install.sh`
+  prunes against `$SIP_EXTENSIONS` and `verify.sh` scans as endpoints-only).
+  See `docs/runbooks/freepbx-trunk.md`.
+- **Reason:** The Asterisk VM sits behind three NAT layers (libvirt NAT,
+  WSL2 NAT, ISP router) with no inbound reachability and no stable public
+  address, so a classic PBX-to-PBX peer trunk (FreePBX INVITEs us directly)
+  is impossible. Outbound registration reuses the pinhole the REGISTER
+  opens, which is the only path back in. Proven live 2026-07-16: real
+  inbound call, full Turkish multi-turn conversation, two-way RTP confirmed
+  by AudioSocket counters. Symmetric RTP latching on the FreePBX side
+  carried audio both ways with our private-IP SDP; `external_media_address`
+  is deliberately NOT set (it would fix the address but not the port under
+  double NAT and is strictly worse than a private address a symmetric peer
+  ignores). Being an extension (not a real trunk) also means the DID leg is
+  ulaw 8 kHz -- the Sippy softswitch upstream offers G722 but the trunk
+  pins `allow=ulaw,alaw`; wideband to STT is an untested follow-up.
+- **Impact:** The trunk is optional and gated on `FREEPBX_HOST`; a lab
+  without it renders nothing and `make verify` stays green (trunk checks
+  are conditional on the rendered file existing). `FREEPBX_PORT` must match
+  the FreePBX SIP port, which is not necessarily 5060 (the test box uses
+  7201 for scanner avoidance). Any future change to the `[voicebot]` or
+  `[from-freepbx]` contexts, or to the trunk template, must preserve the
+  single-AudioSocket-block invariant and be re-verified with a live inbound
+  call, since the dialplan is copied verbatim (no envsubst) and cannot
+  interpolate the extension number -- inbound matching relies on the `_X.`
+  pattern plus the registration's `line=`/`contact_user`.
