@@ -1,0 +1,86 @@
+; Rendered by install.sh into /etc/asterisk/pjsip.trunks.d/freepbx.conf when
+; FREEPBX_HOST is set. Edit the template in the repo, not the rendered file.
+;
+; Topology: this VM sits behind libvirt NAT behind WSL2 NAT behind the ISP
+; router. Three NAT layers, no inbound reachability, no stable public
+; address. So we are not a peer FreePBX can call -- we REGISTER outbound as
+; an ordinary extension and FreePBX delivers DID calls back down that
+; registration. See docs/runbooks/freepbx-trunk.md for the full flow.
+
+[freepbx-auth]
+type=auth
+auth_type=userpass
+username=${FREEPBX_EXT}
+password=${FREEPBX_EXT_PASSWORD}
+
+[freepbx-aor]
+type=aor
+; Static contact: where our REGISTER, INVITEs, and qualify OPTIONS are sent.
+; FreePBX listens on a non-standard SIP port (see FREEPBX_PORT), not 5060.
+contact=sip:${FREEPBX_HOST}:${FREEPBX_PORT}
+; The OPTIONS ping is the only thing holding the UDP pinhole open between
+; REGISTER refreshes. Every mapping on the path (libvirt MASQUERADE, WSL2,
+; the ISP router) drops idle UDP flows in ~30-180 s. If the pinhole dies,
+; FreePBX's own qualify OPTIONS never reach us, it marks the extension
+; unreachable, and the inbound DID route fails. Not optional here.
+qualify_frequency=30
+qualify_timeout=3.0
+
+[freepbx-trunk]
+type=endpoint
+context=${FREEPBX_CONTEXT}
+aors=freepbx-aor
+outbound_auth=freepbx-auth
+from_user=${FREEPBX_EXT}
+from_domain=${FREEPBX_HOST}
+; The DID leg upstream of FreePBX is narrowband; ulaw/alaw only. Offering
+; opus/g722 here would just add a second transcode on the FreePBX box. The
+; voicebot leg is slin16 regardless -- Asterisk upsamples ulaw for the
+; AudioSocket channel.
+disallow=all
+allow=ulaw,alaw
+dtmf_mode=rfc4733
+; Media terminates here (the voicebot runs on this box), and direct media to
+; a 192.168.122.x address is impossible anyway.
+direct_media=no
+; Our SDP advertises 192.168.122.x, meaningless to FreePBX. Nothing on our
+; side can fix that -- FreePBX latches onto the source of our first RTP
+; packet (it has rtp_symmetric on). These three make the reverse direction
+; work: trust the wire, not the headers.
+rtp_symmetric=yes
+force_rport=yes
+rewrite_contact=yes
+
+[freepbx-reg]
+type=registration
+transport=transport-udp
+server_uri=sip:${FREEPBX_HOST}:${FREEPBX_PORT}
+client_uri=sip:${FREEPBX_EXT}@${FREEPBX_HOST}
+outbound_auth=freepbx-auth
+; line+endpoint routes inbound calls on this registration to the endpoint
+; above. Asterisk appends ;line=<token> to its registered Contact; FreePBX
+; echoes it in the INVITE Request-URI and res_pjsip_outbound_registration
+; matches the request straight to freepbx-trunk. Preferred over
+; type=identify, which matches FreePBX's source IP and breaks if that IP
+; changes.
+line=yes
+endpoint=freepbx-trunk
+; Otherwise the Contact user defaults to "s": inbound calls land on exten s
+; and every SIP trace becomes unreadable.
+contact_user=${FREEPBX_EXT}
+; Short expiry so the REGISTER refresh doubles as a pinhole keepalive and a
+; stale binding after a VM/host suspend clears fast.
+expiration=120
+retry_interval=30
+; Defaults here are traps: auth_rejection_permanent=yes with
+; forbidden_retry_interval=0 means one wrong password wedges the
+; registration until Asterisk restarts -- and FreePBX runs fail2ban
+; (maxretry=5, all-ports ban), so a retry storm on a bad password would ban
+; this VM's public IP. Back off and self-heal instead.
+auth_rejection_permanent=no
+forbidden_retry_interval=600
+fatal_retry_interval=600
+; max_retries=0 does not mean "forever"; it means "do not retry". Set high so
+; a FreePBX maintenance window or boot-before-network does not leave the
+; trunk permanently down.
+max_retries=10000

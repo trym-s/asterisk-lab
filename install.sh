@@ -113,6 +113,34 @@ for f in /etc/asterisk/pjsip.d/*.conf; do
 done
 shopt -u nullglob
 
+# ---- 5b. FreePBX outbound-registration trunk (optional) -------------
+# Enabled by FREEPBX_HOST being set, mirroring how SBC_IP gates the SBC.
+# Kept out of pjsip.d/ on purpose: that directory is pruned against
+# $SIP_EXTENSIONS, and verify.sh derives its endpoint list from it. This
+# directory holds exactly this one file, so unsetting FREEPBX_HOST removes
+# the trunk on re-run (same contract as pruning an orphaned endpoint).
+$SUDO install -d -o asterisk -g asterisk -m 0750 /etc/asterisk/pjsip.trunks.d
+trunk_out=/etc/asterisk/pjsip.trunks.d/freepbx.conf
+if [ -n "${FREEPBX_HOST:-}" ]; then
+  : "${FREEPBX_EXT:?FREEPBX_HOST is set; FREEPBX_EXT must be set too}"
+  : "${FREEPBX_EXT_PASSWORD:?FREEPBX_HOST is set; FREEPBX_EXT_PASSWORD must be set too}"
+  : "${FREEPBX_PORT:=5060}"
+  : "${FREEPBX_CONTEXT:=from-freepbx}"
+  echo "==> FreePBX trunk (ext ${FREEPBX_EXT} -> ${FREEPBX_HOST}:${FREEPBX_PORT})"
+  # shellcheck disable=SC2016  # envsubst whitelist must be literal, not expanded.
+  FREEPBX_HOST="$FREEPBX_HOST" FREEPBX_PORT="$FREEPBX_PORT" \
+  FREEPBX_EXT="$FREEPBX_EXT" FREEPBX_EXT_PASSWORD="$FREEPBX_EXT_PASSWORD" \
+  FREEPBX_CONTEXT="$FREEPBX_CONTEXT" \
+    envsubst '${FREEPBX_HOST} ${FREEPBX_PORT} ${FREEPBX_EXT} ${FREEPBX_EXT_PASSWORD} ${FREEPBX_CONTEXT}' \
+    < vms/asterisk/etc/asterisk/pjsip-trunk.conf.tmpl \
+    | $SUDO tee "${trunk_out}.new" >/dev/null
+  $SUDO chown asterisk:asterisk "${trunk_out}.new"
+  $SUDO chmod 0640 "${trunk_out}.new"
+  $SUDO mv "${trunk_out}.new" "$trunk_out"
+else
+  [ -e "$trunk_out" ] && { echo "  removing FreePBX trunk (FREEPBX_HOST unset)"; $SUDO rm -f "$trunk_out"; }
+fi
+
 # ---- 6. start, verify -----------------------------------------------
 echo "==> (re)starting asterisk"
 $SUDO systemctl restart asterisk

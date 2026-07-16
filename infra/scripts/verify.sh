@@ -51,7 +51,15 @@ else
 fi
 
 check "dialplan extension 600 present" "MixMonitor"         "$SUDO asterisk -rx 'dialplan show 600@from-softphones'"
+check "voicebot context reaches AudioSocket" "AudioSocket" "$SUDO asterisk -rx 'dialplan show s@voicebot'"
 check "monitor dir writable by asterisk" "asterisk asterisk" "stat -c '%U %G' /var/spool/asterisk/monitor"
+
+# FreePBX trunk checks only when the trunk is provisioned. A lab without the
+# trunk (no FREEPBX_HOST) has no rendered file and must stay green.
+if [ -f /etc/asterisk/pjsip.trunks.d/freepbx.conf ]; then
+  check "from-freepbx context present"   "Goto"              "$SUDO asterisk -rx 'dialplan show from-freepbx'"
+  check "freepbx registration up"        "Registered"        "$SUDO asterisk -rx 'pjsip show registrations'"
+fi
 
 echo
 echo "== transcriber =="

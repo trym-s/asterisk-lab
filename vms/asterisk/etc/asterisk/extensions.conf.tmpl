@@ -30,15 +30,26 @@ exten => _10XX,1,NoOp(Bridge call: ${CALLERID(num)} -> ${EXTEN})
  same => n,Dial(PJSIP/${EXTEN},20)
  same => n,Hangup()
 
-; Voicebot AI — Pipecat lane. Extension 1098 routes to the Pipecat agent
-; container listening on 127.0.0.1:8090 via the AudioSocket CHANNEL driver
-; (Dial form), not the dialplan app: the app is fixed at 8 kHz, while the
-; channel driver takes c(slin16) and delivers 16 kHz wideband PCM
-; (20 ms ptime -> 640-byte frames). Asterisk transcodes the caller leg
-; (g722/opus stay wideband; ulaw callers get upsampled). See
-; services/pipecat/. The UUID in the dial string becomes the call handle
-; in the agent's logs.
-exten => 1098,1,NoOp(Voicebot Pipecat: ${CALLERID(num)} -> AudioSocket)
+; Voicebot AI — Pipecat lane. Softphones dial 1098; inbound FreePBX DID
+; calls arrive in [from-freepbx] below. Both jump to [voicebot] so the
+; AudioSocket wiring lives in exactly one place.
+exten => 1098,1,Goto(voicebot,s,1)
+
+exten => h,1,NoOp(Call ended. Recording file was ${RECORDING_FILE})
+
+; The Pipecat agent container listens on 127.0.0.1:8090 via the AudioSocket
+; CHANNEL driver (Dial form), not the dialplan app: the app is fixed at
+; 8 kHz, while the channel driver takes c(slin16) and delivers 16 kHz
+; wideband PCM (20 ms ptime -> 640-byte frames). Asterisk transcodes the
+; caller leg (g722/opus stay wideband; ulaw callers get upsampled). See
+; services/pipecat/. The UUID in the dial string becomes the call handle in
+; the agent's logs.
+;
+; Entered by Goto (not GoSub): this block is terminal (ends in Hangup), and
+; the h extension must be looked up in the context the channel is in when it
+; hangs up -- so h lives here too.
+[voicebot]
+exten => s,1,NoOp(Voicebot Pipecat: ${CALLERID(num)} via ${CHANNEL(endpoint)} -> AudioSocket)
  same => n,Set(RECORDING_FILE=${MONITOR_DIR}/${STRFTIME(${EPOCH},,%Y%m%d-%H%M%S)}-${CALLERID(num)}-pc-${UNIQUEID}.wav)
  same => n,Answer()
  same => n,MixMonitor(${RECORDING_FILE})
@@ -51,3 +62,14 @@ exten => 1098,1,NoOp(Voicebot Pipecat: ${CALLERID(num)} -> AudioSocket)
  same => n,Hangup()
 
 exten => h,1,NoOp(Call ended. Recording file was ${RECORDING_FILE})
+
+; Inbound DID from FreePBX, arriving down our outbound registration (see
+; pjsip-trunk.conf.tmpl, context set by FREEPBX_CONTEXT). FreePBX dials
+; PJSIP/1003, so the exten we land on is the registration's contact_user,
+; not the DID. This file is copied verbatim by install.sh and cannot
+; interpolate the extension number, so match by pattern: s covers a
+; contact_user we failed to pin, _X. covers the extension and any DID while
+; not swallowing the h/i/t specials a bare _. would.
+[from-freepbx]
+exten => s,1,Goto(voicebot,s,1)
+exten => _X.,1,Goto(voicebot,s,1)
